@@ -21,7 +21,7 @@ export function useAudioAnalyzer() {
   const streamRef = useRef<MediaStream | null>(null);
   const animFrameRef = useRef(0);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const dataArrayRef = useRef<Uint8Array | null>(null);
+  const dataArrayRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
 
   const analyze = useCallback(() => {
     if (!analyserRef.current || !dataArrayRef.current) return;
