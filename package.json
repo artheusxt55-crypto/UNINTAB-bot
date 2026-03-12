@@ -13,6 +13,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "groq-sdk": "^0.9.0",
+    "@gradio/client": "^1.10.0",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
@@ -87,7 +89,5 @@
     "typescript-eslint": "^8.38.0",
     "vite": "^5.4.19",
     "vitest": "^3.2.4"
-    "@gradio/client": "^1.10.0",
-"groq-sdk": "^0.9.0",
   }
 }
