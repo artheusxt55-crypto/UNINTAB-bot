@@ -1,24 +1,19 @@
-import { useState, useRef, useEffect, KeyboardEvent } from "react";
+import { useState, useRef, useEffect, useCallback, KeyboardEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Mic, MicOff, Plus, Menu } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import NeuralOrb from "./NeuralOrb";
 import { useAudioAnalyzer } from "@/hooks/useAudioAnalyzer";
 import ChatSidebar from "./ChatSidebar";
-
-interface Message {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: Date;
-}
-
-interface Conversation {
-  id: string;
-  title: string;
-  messages: Message[];
-  createdAt: Date;
-}
+import {
+  type Message,
+  type Conversation,
+  sendMessageToAI,
+  saveConversation,
+  loadAllConversations,
+  createMessage,
+  createConversation,
+} from "@/lib/chatLogic";
 
 function TypingIndicator() {
   return (
@@ -35,18 +30,9 @@ function TypingIndicator() {
   );
 }
 
-const DEMO_RESPONSES = [
-  "Olá! Sou a **Neural AI**. Como posso ajudar você hoje?\n\nPosso auxiliar com:\n- 💡 Ideias e brainstorming\n- 📝 Escrita e revisão de textos\n- 💻 Programação e código\n- 🔍 Pesquisa e análise",
-  "Interessante! Deixe-me pensar sobre isso...\n\nBaseado na sua pergunta, aqui estão alguns pontos relevantes:\n\n1. **Contexto** — É importante considerar o cenário completo\n2. **Abordagem** — Existem várias maneiras de resolver isso\n3. **Resultado** — O melhor caminho depende dos seus objetivos\n\nQuer que eu aprofunde em algum desses pontos?",
-  "Ótima pergunta! Aqui vai minha análise:\n\n```\n// Exemplo de código\nconst result = await processData(input);\nconsole.log(result);\n```\n\nEssa abordagem é eficiente porque:\n- Usa processamento assíncrono\n- Minimiza o uso de memória\n- É facilmente escalável",
-  "Claro! Vou te ajudar com isso. 🚀\n\nO processo envolve algumas etapas:\n\n1. Primeiro, precisamos definir os requisitos\n2. Depois, criamos a estrutura base\n3. Por fim, implementamos e testamos\n\n> \"A melhor maneira de prever o futuro é criá-lo.\" — Peter Drucker",
-];
-
 export default function ChatInterface() {
-  const [conversations, setConversations] = useState<Conversation[]>([
-    { id: "1", title: "Nova conversa", messages: [], createdAt: new Date() },
-  ]);
-  const [activeConvId, setActiveConvId] = useState("1");
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConvId, setActiveConvId] = useState<string>("");
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -54,9 +40,22 @@ export default function ChatInterface() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const audioAnalyzer = useAudioAnalyzer();
-  const responseIndexRef = useRef(0);
 
-  const activeConversation = conversations.find((c) => c.id === activeConvId)!;
+  // Load conversations on mount
+  useEffect(() => {
+    loadAllConversations().then((convs) => {
+      if (convs.length === 0) {
+        const initial = createConversation();
+        setConversations([initial]);
+        setActiveConvId(initial.id);
+      } else {
+        setConversations(convs);
+        setActiveConvId(convs[0].id);
+      }
+    });
+  }, []);
+
+  const activeConversation = conversations.find((c) => c.id === activeConvId);
   const messages = activeConversation?.messages || [];
 
   useEffect(() => {
@@ -70,34 +69,60 @@ export default function ChatInterface() {
     }
   }, [input]);
 
-  const addMessage = (role: "user" | "assistant", content: string) => {
-    const msg: Message = { id: Date.now().toString() + Math.random(), role, content, timestamp: new Date() };
-    setConversations((prev) =>
-      prev.map((c) => {
-        if (c.id !== activeConvId) return c;
-        const updated = { ...c, messages: [...c.messages, msg] };
-        if (role === "user" && c.messages.length === 0) {
-          updated.title = content.slice(0, 40) + (content.length > 40 ? "..." : "");
-        }
-        return updated;
-      })
-    );
-  };
+  const updateConversation = useCallback(
+    (updater: (conv: Conversation) => Conversation) => {
+      setConversations((prev) =>
+        prev.map((c) => (c.id === activeConvId ? updater(c) : c))
+      );
+    },
+    [activeConvId]
+  );
 
-  const handleSend = () => {
-    if (!input.trim()) return;
-    addMessage("user", input.trim());
+  const handleSend = useCallback(async () => {
+    if (!input.trim() || !activeConversation) return;
+
+    const userMsg = createMessage("user", input.trim());
     setInput("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
+    const updatedConv: Conversation = {
+      ...activeConversation,
+      messages: [...activeConversation.messages, userMsg],
+      updatedAt: Date.now(),
+      title:
+        activeConversation.messages.length === 0
+          ? input.trim().slice(0, 40) + (input.trim().length > 40 ? "..." : "")
+          : activeConversation.title,
+    };
+
+    setConversations((prev) =>
+      prev.map((c) => (c.id === activeConvId ? updatedConv : c))
+    );
+
     setIsTyping(true);
-    setTimeout(() => {
-      const response = DEMO_RESPONSES[responseIndexRef.current % DEMO_RESPONSES.length];
-      responseIndexRef.current++;
-      addMessage("assistant", response);
+
+    try {
+      const aiContent = await sendMessageToAI(updatedConv.messages);
+      const aiMsg = createMessage("assistant", aiContent);
+
+      const finalConv: Conversation = {
+        ...updatedConv,
+        messages: [...updatedConv.messages, aiMsg],
+        updatedAt: Date.now(),
+      };
+
+      setConversations((prev) =>
+        prev.map((c) => (c.id === activeConvId ? finalConv : c))
+      );
+
+      // Persist to Upstash / localStorage
+      saveConversation(finalConv).catch(console.error);
+    } catch (err) {
+      console.error("Error sending message:", err);
+    } finally {
       setIsTyping(false);
-    }, 1500 + Math.random() * 1500);
-  };
+    }
+  }, [input, activeConversation, activeConvId]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -107,9 +132,9 @@ export default function ChatInterface() {
   };
 
   const handleNewConversation = () => {
-    const id = Date.now().toString();
-    setConversations((prev) => [{ id, title: "Nova conversa", messages: [], createdAt: new Date() }, ...prev]);
-    setActiveConvId(id);
+    const conv = createConversation();
+    setConversations((prev) => [conv, ...prev]);
+    setActiveConvId(conv.id);
     setSidebarOpen(false);
   };
 
@@ -127,7 +152,6 @@ export default function ChatInterface() {
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
-      {/* Sidebar */}
       <ChatSidebar
         conversations={conversations}
         activeConvId={activeConvId}
@@ -137,7 +161,6 @@ export default function ChatInterface() {
         onClose={() => setSidebarOpen(false)}
       />
 
-      {/* Main */}
       <div className="flex-1 flex flex-col min-w-0 relative">
         {/* Header */}
         <header className="flex items-center gap-3 px-4 py-3 border-b border-border/50">
@@ -150,11 +173,10 @@ export default function ChatInterface() {
           <h1 className="text-sm font-medium text-foreground/80 font-mono tracking-wider">NEURAL AI</h1>
         </header>
 
-        {/* Messages area */}
+        {/* Messages */}
         <div className="flex-1 overflow-y-auto chat-scrollbar">
           {!hasMessages ? (
             <div className="flex flex-col items-center justify-center h-full px-4">
-              {/* Voice orb area */}
               <div className="relative w-[300px] h-[300px] flex items-center justify-center mb-8">
                 <AnimatePresence>
                   {showVoiceOrb ? (
@@ -221,7 +243,7 @@ export default function ChatInterface() {
           )}
         </div>
 
-        {/* Input area */}
+        {/* Input */}
         <div className="p-4 pb-6">
           <div className="max-w-3xl mx-auto">
             <div className="flex items-end gap-2 bg-chat-input border border-border/50 rounded-2xl px-4 py-3 focus-within:border-primary/30 transition-colors">
