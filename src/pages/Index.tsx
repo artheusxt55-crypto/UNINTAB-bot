@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, KeyboardEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Mic, MicOff, Plus, Menu, Loader2 } from "lucide-react";
+import { Send, Mic, MicOff, Plus, Menu, Loader2, Zap } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import NeuralOrb from "@/components/NeuralOrb";
 import { useAudioAnalyzer } from "@/hooks/useAudioAnalyzer";
@@ -45,6 +45,7 @@ export default function Index() {
   const [isTyping, setIsTyping] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showVoiceOrb, setShowVoiceOrb] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const audioAnalyzer = useAudioAnalyzer();
@@ -119,7 +120,6 @@ export default function Index() {
 
   return (
     <div className="flex h-screen bg-background overflow-hidden font-sans relative">
-      {/* Background Decorativo para realçar o vidro */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-500/10 rounded-full blur-[120px] pointer-events-none" />
 
@@ -140,7 +140,6 @@ export default function Index() {
         <header className="flex items-center gap-3 px-6 py-4 border-b border-white/5 z-20 bg-background/40 backdrop-blur-xl">
           <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 rounded-lg hover:bg-white/5 text-muted-foreground"><Menu size={20} /></button>
           
-          {/* A Bolinha de Status que você pediu */}
           <div className="flex items-center gap-3 flex-1">
             <div className="relative flex h-3 w-3">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
@@ -159,11 +158,16 @@ export default function Index() {
         <main className="flex-1 overflow-y-auto chat-scrollbar relative">
           {!hasMessages ? (
             <div className="flex flex-col items-center justify-center h-full">
-              <div className="w-[300px] h-[300px] flex items-center justify-center mb-8 drop-shadow-[0_0_30px_rgba(var(--primary),0.2)]">
+              <motion.div 
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="w-[300px] h-[300px] flex items-center justify-center mb-8 drop-shadow-[0_0_30px_rgba(var(--primary),0.2)]"
+              >
                 <NeuralOrb isActive={audioAnalyzer.isActive} volume={audioAnalyzer.volume} frequency={audioAnalyzer.frequency} isProcessing={audioAnalyzer.isProcessing} size="md" />
-              </div>
-              <h2 className="text-xl font-medium mb-2 tracking-tight">Inicie o Link Neural</h2>
-              <p className="text-muted-foreground font-mono text-xs uppercase tracking-[0.3em] opacity-50 italic">Lab Neuro-UNINTA // System Ready</p>
+              </motion.div>
+              {/* Estilo ChatGPT: Letra clean, tracking tight */}
+              <h2 className="text-3xl font-semibold mb-2 tracking-tight text-foreground/90">Como posso ajudar?</h2>
+              <p className="text-muted-foreground font-mono text-[10px] uppercase tracking-[0.5em] opacity-40 italic">Lab Neuro-UNINTA // Neural Link Active</p>
             </div>
           ) : (
             <div className="max-w-3xl mx-auto w-full py-10 px-6">
@@ -188,17 +192,71 @@ export default function Index() {
         </main>
 
         <footer className="p-6 bg-gradient-to-t from-background via-background/80 to-transparent">
-          <div className="max-w-3xl mx-auto">
+          <div className="max-w-3xl mx-auto relative">
+            
+            {/* --- HUD ANIMADO AO REDOR DO INPUT --- */}
+            <div className="absolute -inset-1 pointer-events-none">
+              <motion.div 
+                animate={{ opacity: isFocused ? 1 : 0.3 }}
+                className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-primary/50 rounded-tl-lg"
+              />
+              <motion.div 
+                animate={{ opacity: isFocused ? 1 : 0.3 }}
+                className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-primary/50 rounded-tr-lg"
+              />
+              <motion.div 
+                animate={{ opacity: isFocused ? 1 : 0.3 }}
+                className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-primary/50 rounded-bl-lg"
+              />
+              <motion.div 
+                animate={{ opacity: isFocused ? 1 : 0.3 }}
+                className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-primary/50 rounded-br-lg"
+              />
+              {/* Linha de Dados Superior */}
+              <div className="absolute -top-3 left-6 flex gap-2">
+                <span className="text-[7px] font-mono text-primary/40 uppercase tracking-tighter">Sync_Active</span>
+                <motion.div 
+                  animate={{ scaleX: [0, 1, 0] }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                  className="w-8 h-[1px] bg-primary/20 mt-[4px]"
+                />
+              </div>
+            </div>
+
             {/* Input com efeito de Vidro */}
-            <div className="flex items-end gap-2 bg-white/5 border border-white/10 rounded-2xl p-3 focus-within:border-primary/40 focus-within:bg-white/10 transition-all shadow-2xl backdrop-blur-2xl">
-              <button onClick={toggleVoice} className={`p-2 rounded-xl transition-all ${audioAnalyzer.isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-white/5"}`}>
+            <div className={`flex items-end gap-2 bg-white/5 border border-white/10 rounded-2xl p-3 transition-all duration-500 shadow-2xl backdrop-blur-2xl ${isFocused ? 'ring-1 ring-primary/20 bg-white/10' : ''}`}>
+              <button 
+                onClick={toggleVoice} 
+                className={`p-2 rounded-xl transition-all ${audioAnalyzer.isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-white/5"}`}
+              >
                 {audioAnalyzer.isActive ? <MicOff size={20} /> : <Mic size={20} />}
               </button>
-              <textarea ref={textareaRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Injete um comando..." rows={1} className="flex-1 bg-transparent border-none focus:ring-0 resize-none text-sm py-2 placeholder:text-muted-foreground/30" />
-              <button onClick={handleSend} disabled={!input.trim() || isTyping} className="p-2 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 transition-transform active:scale-95 shadow-lg">
-                {isTyping ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
+
+              <textarea 
+                ref={textareaRef} 
+                value={input} 
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => setIsFocused(false)}
+                onChange={(e) => setInput(e.target.value)} 
+                onKeyDown={handleKeyDown} 
+                placeholder="Injete um comando..." 
+                rows={1} 
+                className="flex-1 bg-transparent border-none focus:ring-0 resize-none text-sm py-2 placeholder:text-muted-foreground/30 font-sans" 
+              />
+
+              <button 
+                onClick={handleSend} 
+                disabled={!input.trim() || isTyping} 
+                className="p-2 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 transition-all active:scale-95 shadow-lg group"
+              >
+                {isTyping ? (
+                  <Loader2 size={20} className="animate-spin" />
+                ) : (
+                  <Send size={20} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                )}
               </button>
             </div>
+            
             <p className="text-center text-[9px] text-muted-foreground/30 mt-4 font-mono uppercase tracking-[0.4em]">
               Protocol Aura 6.0 // Secure Terminal
             </p>
