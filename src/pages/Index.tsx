@@ -79,19 +79,15 @@ export default function Index() {
 
   const handleSend = async () => {
     if (!input.trim() || isTyping) return;
-    
     const userMsg = input.trim();
     const userId = "untbot_user";
-    
     addMessage("user", userMsg);
     setInput("");
     setIsTyping(true);
-
     try {
       const historico = await buscarDoRedis(userId);
       const contexto = `Você é a Aura AI do Lab Neuro-UNINTA. Mestre: Matheus. Responda de forma técnica e futurista. Histórico recente: ${historico.join(" | ")}`;
       const resposta = await analisarComGroq(userMsg, contexto);
-      
       await salvarNoRedis(userId, `U: ${userMsg} | B: ${resposta}`);
       addMessage("assistant", resposta);
       falarTexto(resposta);
@@ -122,7 +118,11 @@ export default function Index() {
   const hasMessages = messages.length > 0;
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden font-sans">
+    <div className="flex h-screen bg-background overflow-hidden font-sans relative">
+      {/* Background Decorativo para realçar o vidro */}
+      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-500/10 rounded-full blur-[120px] pointer-events-none" />
+
       <ChatSidebar
         conversations={conversations}
         activeConvId={activeConvId}
@@ -136,25 +136,34 @@ export default function Index() {
         onClose={() => setSidebarOpen(false)}
       />
 
-      <div className="flex-1 flex flex-col min-w-0 relative">
-        <header className="flex items-center gap-3 px-4 py-3 border-b border-border/50 z-20 bg-background/80 backdrop-blur-md">
-          <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 rounded-lg hover:bg-muted text-muted-foreground"><Menu size={20} /></button>
+      <div className="flex-1 flex flex-col min-w-0 relative z-10">
+        <header className="flex items-center gap-3 px-6 py-4 border-b border-white/5 z-20 bg-background/40 backdrop-blur-xl">
+          <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 rounded-lg hover:bg-white/5 text-muted-foreground"><Menu size={20} /></button>
+          
+          {/* A Bolinha de Status que você pediu */}
+          <div className="flex items-center gap-3 flex-1">
+            <div className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-primary shadow-[0_0_10px_rgba(var(--primary),0.8)]"></span>
+            </div>
+            <h1 className="text-sm font-bold font-mono tracking-widest text-primary uppercase">Neural AI // Aura V6</h1>
+          </div>
+
           <button onClick={() => {
             const id = Date.now().toString();
             setConversations(prev => [{ id, title: "Nova conversa", messages: [], createdAt: new Date() }, ...prev]);
             setActiveConvId(id);
-          }} className="p-2 rounded-lg hover:bg-muted text-muted-foreground"><Plus size={20} /></button>
-          <h1 className="text-sm font-bold font-mono tracking-widest text-primary uppercase">Neural AI // Aura V6</h1>
+          }} className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground"><Plus size={20} /></button>
         </header>
 
-        <main className="flex-1 overflow-y-auto chat-scrollbar relative z-10">
+        <main className="flex-1 overflow-y-auto chat-scrollbar relative">
           {!hasMessages ? (
             <div className="flex flex-col items-center justify-center h-full">
-              <div className="w-[300px] h-[300px] flex items-center justify-center mb-8">
+              <div className="w-[300px] h-[300px] flex items-center justify-center mb-8 drop-shadow-[0_0_30px_rgba(var(--primary),0.2)]">
                 <NeuralOrb isActive={audioAnalyzer.isActive} volume={audioAnalyzer.volume} frequency={audioAnalyzer.frequency} isProcessing={audioAnalyzer.isProcessing} size="md" />
               </div>
-              <h2 className="text-xl font-medium mb-2">Como posso ajudar?</h2>
-              <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest italic">Lab Neuro-UNINTA // Assistant Online</p>
+              <h2 className="text-xl font-medium mb-2 tracking-tight">Inicie o Link Neural</h2>
+              <p className="text-muted-foreground font-mono text-xs uppercase tracking-[0.3em] opacity-50 italic">Lab Neuro-UNINTA // System Ready</p>
             </div>
           ) : (
             <div className="max-w-3xl mx-auto w-full py-10 px-6">
@@ -162,9 +171,11 @@ export default function Index() {
                 {messages.map((msg) => (
                   <motion.div key={msg.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`mb-8 ${msg.role === "user" ? "flex justify-end" : "flex gap-4"}`}>
                     {msg.role === "assistant" && (
-                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shadow-lg border border-primary/20 shrink-0"><div className="w-2 h-2 rounded-full bg-primary animate-pulse" /></div>
+                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shadow-lg border border-primary/20 shrink-0">
+                        <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                      </div>
                     )}
-                    <div className={`p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed ${msg.role === "user" ? "bg-primary text-primary-foreground shadow-xl" : "bg-muted/50 border border-border/50 text-foreground"}`}>
+                    <div className={`p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed backdrop-blur-md border ${msg.role === "user" ? "bg-primary text-primary-foreground border-primary/20 shadow-xl" : "bg-white/5 border-white/10 text-foreground"}`}>
                       <ReactMarkdown className="prose prose-invert prose-sm max-w-none">{msg.content}</ReactMarkdown>
                     </div>
                   </motion.div>
@@ -176,19 +187,20 @@ export default function Index() {
           )}
         </main>
 
-        <footer className="p-4 bg-gradient-to-t from-background to-transparent z-20">
+        <footer className="p-6 bg-gradient-to-t from-background via-background/80 to-transparent">
           <div className="max-w-3xl mx-auto">
-            <div className="flex items-end gap-2 bg-muted/50 border border-border/50 rounded-2xl p-3 focus-within:border-primary/50 transition-all shadow-2xl backdrop-blur-xl">
-              <button onClick={toggleVoice} className={`p-2 rounded-xl transition-all ${audioAnalyzer.isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-background"}`}>
+            {/* Input com efeito de Vidro */}
+            <div className="flex items-end gap-2 bg-white/5 border border-white/10 rounded-2xl p-3 focus-within:border-primary/40 focus-within:bg-white/10 transition-all shadow-2xl backdrop-blur-2xl">
+              <button onClick={toggleVoice} className={`p-2 rounded-xl transition-all ${audioAnalyzer.isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-white/5"}`}>
                 {audioAnalyzer.isActive ? <MicOff size={20} /> : <Mic size={20} />}
               </button>
-              <textarea ref={textareaRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Injete um comando..." rows={1} className="flex-1 bg-transparent border-none focus:ring-0 resize-none text-sm py-2" />
-              <button onClick={handleSend} disabled={!input.trim() || isTyping} className="p-2 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 transition-transform active:scale-95">
+              <textarea ref={textareaRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Injete um comando..." rows={1} className="flex-1 bg-transparent border-none focus:ring-0 resize-none text-sm py-2 placeholder:text-muted-foreground/30" />
+              <button onClick={handleSend} disabled={!input.trim() || isTyping} className="p-2 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 transition-transform active:scale-95 shadow-lg">
                 {isTyping ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
               </button>
             </div>
-            <p className="text-center text-[10px] text-muted-foreground/30 mt-3 font-mono uppercase tracking-[0.3em]">
-              Protocol Aura 6.0 // Neural Interface Activated
+            <p className="text-center text-[9px] text-muted-foreground/30 mt-4 font-mono uppercase tracking-[0.4em]">
+              Protocol Aura 6.0 // Secure Terminal
             </p>
           </div>
         </footer>
@@ -196,13 +208,11 @@ export default function Index() {
 
       <AnimatePresence>
         {showVoiceOrb && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-background/95 backdrop-blur-3xl flex flex-col items-center justify-center">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-background/80 backdrop-blur-3xl flex flex-col items-center justify-center">
             <NeuralOrb isActive={audioAnalyzer.isActive} volume={audioAnalyzer.volume} frequency={audioAnalyzer.frequency} isProcessing={audioAnalyzer.isProcessing} />
             <div className="mt-10 flex flex-col items-center gap-4">
-              <p className="font-mono text-xs tracking-widest text-primary animate-pulse uppercase">
-                {audioAnalyzer.isProcessing ? "Sincronizando..." : "Ouvindo Redes Neurais..."}
-              </p>
-              <button onClick={toggleVoice} className="p-5 bg-destructive/20 text-destructive border border-destructive/20 rounded-full hover:bg-destructive hover:text-white transition-all shadow-2xl shadow-destructive/20"><MicOff size={28} /></button>
+              <p className="font-mono text-xs tracking-widest text-primary animate-pulse uppercase">Ouvindo núcleo neural...</p>
+              <button onClick={toggleVoice} className="p-5 bg-destructive/10 text-destructive border border-destructive/20 rounded-full hover:bg-destructive hover:text-white transition-all"><MicOff size={28} /></button>
             </div>
           </motion.div>
         )}
