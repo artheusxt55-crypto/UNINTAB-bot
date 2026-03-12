@@ -197,11 +197,13 @@ export default function Index() {
               )}
             </AnimatePresence>
             
+            {/* CONTAINER DO INPUT - ESTILIZAÇÃO DO CHAT */}
             <div className="relative z-10 flex items-end gap-2 bg-black/40 border border-white/10 rounded-[1.5rem] p-2.5 transition-all duration-300 backdrop-blur-3xl focus-within:border-primary/30">
               <button onClick={toggleVoice} className={`p-2.5 rounded-xl transition-all ${audioAnalyzer.isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-white/5"}`}>
                 {audioAnalyzer.isActive ? <MicOff size={18} /> : <Mic size={18} />}
               </button>
               
+              {/* O TEXTAREA CORRIGIDO (SEM BORDA BRANCA) */}
               <textarea 
                 ref={textareaRef} 
                 value={input} 
