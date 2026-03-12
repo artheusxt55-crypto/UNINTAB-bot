@@ -1,12 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageSquare, Plus, X } from "lucide-react";
-
-interface Conversation {
-  id: string;
-  title: string;
-  messages: any[];
-  createdAt: Date;
-}
+import type { Conversation } from "@/lib/chatLogic";
 
 interface ChatSidebarProps {
   conversations: Conversation[];
