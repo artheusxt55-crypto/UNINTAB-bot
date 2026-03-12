@@ -80,15 +80,19 @@ export default function Index() {
 
   const handleSend = async () => {
     if (!input.trim() || isTyping) return;
+    
     const userMsg = input.trim();
     const userId = "untbot_user";
+    
     addMessage("user", userMsg);
     setInput("");
     setIsTyping(true);
+
     try {
       const historico = await buscarDoRedis(userId);
       const contexto = `Você é a Aura AI do Lab Neuro-UNINTA. Mestre: Matheus. Responda de forma técnica e futurista. Histórico recente: ${historico.join(" | ")}`;
       const resposta = await analisarComGroq(userMsg, contexto);
+      
       await salvarNoRedis(userId, `U: ${userMsg} | B: ${resposta}`);
       addMessage("assistant", resposta);
       falarTexto(resposta);
@@ -119,7 +123,7 @@ export default function Index() {
   const hasMessages = messages.length > 0;
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden font-sans relative">
+    <div className="flex h-screen bg-background overflow-hidden font-sans relative selection:bg-primary/30">
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-500/10 rounded-full blur-[120px] pointer-events-none" />
 
@@ -155,7 +159,7 @@ export default function Index() {
           }} className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground"><Plus size={20} /></button>
         </header>
 
-        <main className="flex-1 overflow-y-auto chat-scrollbar relative">
+        <main className="flex-1 overflow-y-auto chat-scrollbar relative scroll-smooth">
           {!hasMessages ? (
             <div className="flex flex-col items-center justify-center h-full">
               <motion.div 
@@ -165,21 +169,20 @@ export default function Index() {
               >
                 <NeuralOrb isActive={audioAnalyzer.isActive} volume={audioAnalyzer.volume} frequency={audioAnalyzer.frequency} isProcessing={audioAnalyzer.isProcessing} size="md" />
               </motion.div>
-              {/* Estilo ChatGPT: Letra clean, tracking tight */}
-              <h2 className="text-3xl font-semibold mb-2 tracking-tight text-foreground/90">Como posso ajudar?</h2>
-              <p className="text-muted-foreground font-mono text-[10px] uppercase tracking-[0.5em] opacity-40 italic">Lab Neuro-UNINTA // Neural Link Active</p>
+              <h2 className="text-3xl font-light mb-2 tracking-tight text-foreground/90">Como posso ajudar?</h2>
+              <p className="text-muted-foreground font-mono text-[10px] uppercase tracking-[0.4em] opacity-40 italic">Lab Neuro-UNINTA // Assistant Online</p>
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto w-full py-10 px-6">
+            <div className="max-w-3xl mx-auto w-full py-10 px-6 space-y-2">
               <AnimatePresence mode="popLayout">
                 {messages.map((msg) => (
-                  <motion.div key={msg.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`mb-8 ${msg.role === "user" ? "flex justify-end" : "flex gap-4"}`}>
+                  <motion.div key={msg.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`flex gap-4 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
                     {msg.role === "assistant" && (
-                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shadow-lg border border-primary/20 shrink-0">
-                        <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                      <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center shadow-lg border border-primary/20 shrink-0">
+                        <Zap size={16} className="text-primary animate-pulse" />
                       </div>
                     )}
-                    <div className={`p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed backdrop-blur-md border ${msg.role === "user" ? "bg-primary text-primary-foreground border-primary/20 shadow-xl" : "bg-white/5 border-white/10 text-foreground"}`}>
+                    <div className={`p-5 rounded-2xl max-w-[85%] text-sm leading-relaxed backdrop-blur-md border shadow-xl ${msg.role === "user" ? "bg-primary text-primary-foreground border-primary/30" : "bg-white/5 border-white/10 text-foreground/90"}`}>
                       <ReactMarkdown className="prose prose-invert prose-sm max-w-none">{msg.content}</ReactMarkdown>
                     </div>
                   </motion.div>
@@ -191,47 +194,42 @@ export default function Index() {
           )}
         </main>
 
-        <footer className="p-6 bg-gradient-to-t from-background via-background/80 to-transparent">
-          <div className="max-w-3xl mx-auto relative">
+        <footer className="p-8 bg-gradient-to-t from-background via-background/90 to-transparent">
+          <div className="max-w-4xl mx-auto relative space-y-4">
             
-            {/* --- HUD ANIMADO AO REDOR DO INPUT --- */}
-            <div className="absolute -inset-1 pointer-events-none">
-              <motion.div 
-                animate={{ opacity: isFocused ? 1 : 0.3 }}
-                className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-primary/50 rounded-tl-lg"
-              />
-              <motion.div 
-                animate={{ opacity: isFocused ? 1 : 0.3 }}
-                className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-primary/50 rounded-tr-lg"
-              />
-              <motion.div 
-                animate={{ opacity: isFocused ? 1 : 0.3 }}
-                className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-primary/50 rounded-bl-lg"
-              />
-              <motion.div 
-                animate={{ opacity: isFocused ? 1 : 0.3 }}
-                className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-primary/50 rounded-br-lg"
-              />
-              {/* Linha de Dados Superior */}
-              <div className="absolute -top-3 left-6 flex gap-2">
-                <span className="text-[7px] font-mono text-primary/40 uppercase tracking-tighter">Sync_Active</span>
+            {/* --- HUD ANIMADO - GRADE DE ENERGIA REATIVA --- */}
+            <AnimatePresence>
+              {isFocused && (
                 <motion.div 
-                  animate={{ scaleX: [0, 1, 0] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                  className="w-8 h-[1px] bg-primary/20 mt-[4px]"
-                />
-              </div>
-            </div>
-
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 1.02 }}
+                  transition={{ duration: 0.4 }}
+                  className="absolute -inset-1.5 pointer-events-none rounded-[2rem] border border-primary/30 shadow-[0_0_30px_rgba(var(--primary),0.15)] bg-primary/5"
+                >
+                  <motion.div 
+                    animate={{ x: ["0%", "100%", "0%"] }}
+                    transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
+                    className="absolute -top-[1px] left-1/4 h-[1px] w-1/2 bg-gradient-to-r from-transparent via-primary to-transparent"
+                  />
+                  <motion.div 
+                    animate={{ y: ["0%", "100%", "0%"] }}
+                    transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                    className="absolute top-1/4 -left-[1px] w-[1px] h-1/2 bg-gradient-to-b from-transparent via-primary to-transparent"
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+            
             {/* Input com efeito de Vidro */}
-            <div className={`flex items-end gap-2 bg-white/5 border border-white/10 rounded-2xl p-3 transition-all duration-500 shadow-2xl backdrop-blur-2xl ${isFocused ? 'ring-1 ring-primary/20 bg-white/10' : ''}`}>
+            <div className={`flex items-end gap-3 bg-white/5 border border-white/10 rounded-[1.75rem] p-3 focus-within:bg-black/40 focus-within:border-primary/50 focus-within:shadow-[0_0_20px_rgba(var(--primary),0.1)] transition-all duration-500 backdrop-blur-2xl`}>
               <button 
                 onClick={toggleVoice} 
-                className={`p-2 rounded-xl transition-all ${audioAnalyzer.isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-white/5"}`}
+                className={`p-3 rounded-2xl transition-all ${audioAnalyzer.isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-white/5"}`}
               >
-                {audioAnalyzer.isActive ? <MicOff size={20} /> : <Mic size={20} />}
+                {audioAnalyzer.isActive ? <MicOff size={18} /> : <Mic size={18} />}
               </button>
-
+              
               <textarea 
                 ref={textareaRef} 
                 value={input} 
@@ -239,26 +237,26 @@ export default function Index() {
                 onBlur={() => setIsFocused(false)}
                 onChange={(e) => setInput(e.target.value)} 
                 onKeyDown={handleKeyDown} 
-                placeholder="Injete um comando..." 
+                placeholder="Injete um comando neural..." 
                 rows={1} 
-                className="flex-1 bg-transparent border-none focus:ring-0 resize-none text-sm py-2 placeholder:text-muted-foreground/30 font-sans" 
+                className="flex-1 bg-transparent border-none focus:ring-0 resize-none text-sm py-2 placeholder:text-muted-foreground/30 font-sans max-h-[200px]" 
               />
-
+              
               <button 
                 onClick={handleSend} 
                 disabled={!input.trim() || isTyping} 
-                className="p-2 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 transition-all active:scale-95 shadow-lg group"
+                className="p-3 bg-primary text-primary-foreground rounded-2xl disabled:opacity-20 active:scale-90 shadow-lg group"
               >
                 {isTyping ? (
-                  <Loader2 size={20} className="animate-spin" />
+                  <Loader2 size={18} className="animate-spin" />
                 ) : (
-                  <Send size={20} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                  <Send size={18} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                 )}
               </button>
             </div>
             
-            <p className="text-center text-[9px] text-muted-foreground/30 mt-4 font-mono uppercase tracking-[0.4em]">
-              Protocol Aura 6.0 // Secure Terminal
+            <p className="text-center text-[9px] text-muted-foreground/30 font-mono uppercase tracking-[0.4em]">
+              Protocol Aura 6.0 // Neural Interface
             </p>
           </div>
         </footer>
@@ -266,11 +264,11 @@ export default function Index() {
 
       <AnimatePresence>
         {showVoiceOrb && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-background/80 backdrop-blur-3xl flex flex-col items-center justify-center">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-background/98 backdrop-blur-3xl flex flex-col items-center justify-center">
             <NeuralOrb isActive={audioAnalyzer.isActive} volume={audioAnalyzer.volume} frequency={audioAnalyzer.frequency} isProcessing={audioAnalyzer.isProcessing} />
-            <div className="mt-10 flex flex-col items-center gap-4">
+            <div className="mt-16 flex flex-col items-center gap-6">
               <p className="font-mono text-xs tracking-widest text-primary animate-pulse uppercase">Ouvindo núcleo neural...</p>
-              <button onClick={toggleVoice} className="p-5 bg-destructive/10 text-destructive border border-destructive/20 rounded-full hover:bg-destructive hover:text-white transition-all"><MicOff size={28} /></button>
+              <button onClick={toggleVoice} className="p-6 rounded-full bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive hover:text-white transition-all"><MicOff size={28} /></button>
             </div>
           </motion.div>
         )}
