@@ -5,10 +5,11 @@ const REDIS_URL = "https://enormous-raccoon-41416.upstash.io";
 const REDIS_TOKEN = "AaHIAAIncDIwNjZhOGMxNmYzMDQ0Mjc0YjYwMTJiNjI1NDYyNDg4ZHAyNDE0MTY";
 
 /**
- * MEMÓRIA: Salva a interação no banco de dados para a Aura não esquecer.
+ * MEMÓRIA: Salva a interação no banco de dados.
  */
 export const salvarNoRedis = async (usuario: string, msg: string) => {
   try {
+    // Usando o método REST do Upstash
     await fetch(`${REDIS_URL}/lpush/${usuario}/${encodeURIComponent(msg)}?_token=${REDIS_TOKEN}`);
   } catch (e) {
     console.error("Erro ao salvar no cérebro digital:", e);
@@ -16,7 +17,7 @@ export const salvarNoRedis = async (usuario: string, msg: string) => {
 };
 
 /**
- * MEMÓRIA: Busca as últimas conversas para dar contexto à IA.
+ * MEMÓRIA: Busca as últimas conversas.
  */
 export const buscarDoRedis = async (usuario: string) => {
   try {
@@ -29,7 +30,7 @@ export const buscarDoRedis = async (usuario: string) => {
 };
 
 /**
- * VOZ: Conecta ao seu modelo Gradio e sintetiza o texto em áudio.
+ * VOZ: Conecta ao modelo Gradio da UNINTA.
  */
 export const falarTexto = async (texto: string) => {
   try {
@@ -49,46 +50,28 @@ export const falarTexto = async (texto: string) => {
 };
 
 /**
- * CÉREBRO: Processa a resposta usando a Groq com rotação de chaves.
+ * CÉREBRO: Agora chama a sua API interna no Back-end (Vercel Functions).
  */
 export const analisarComGroq = async (prompt: string, contexto: string) => {
-  // Puxa as chaves das variáveis de ambiente da Vercel
-  const chaves = [
-    import.meta.env.VITE_GROQ_API_KEY,
-    import.meta.env.VITE_GROQ_API_KEY2
-  ];
+  try {
+    // Chamada para a rota que você criou em /api/chat.ts
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ prompt, contexto }),
+    });
 
-  for (const key of chaves) {
-    if (!key) continue;
-
-    try {
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${key}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
-          messages: [
-            { role: "system", content: contexto },
-            { role: "user", content: prompt }
-          ],
-          temperature: 0.7,
-          max_tokens: 1024
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        return data.choices[0].message.content;
-      }
-      
-      console.warn(`Chave falhou (Status: ${response.status}). Tentando próxima...`);
-    } catch (e) {
-      console.error("Erro na requisição Groq:", e);
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Erro na resposta da API.");
     }
-  }
 
-  throw new Error("Todas as sinapses neurais falharam. Verifique as chaves na Vercel.");
+    const data = await response.json();
+    return data.resposta; // Retorna a string processada pelo back-end
+  } catch (error) {
+    console.error("Erro na ponte neural (API):", error);
+    throw new Error("⚠️ Conexão neural interrompida. Verifique os logs do servidor.");
+  }
 };
