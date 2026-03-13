@@ -414,4 +414,74 @@ Pergunta: ${userMsg}`;
                         <Zap size={14} className="text-primary animate-pulse" />
                       </div>
                     )}
-                 
+                 rel="noopener noreferrer"
+                                className="flex items-start gap-2 p-2.5 rounded-lg bg-white/5 hover:bg-primary/10 border border-white/5 text-xs group transition-all duration-200 hover:shadow-lg hover:scale-[1.02]"
+                              >
+                                <div className="w-6 h-6 mt-0.5 flex-shrink-0 rounded-sm flex items-center justify-center text-xs font-bold bg-primary/20 border border-primary/30">
+                                  {source.type === 'wikipedia' ? <Globe size={11} className="text-blue-400" /> : <BookOpen size={11} className="text-green-400" />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-semibold text-white truncate group-hover:underline">{source.title}</p>
+                                  <p className="text-white/70 text-[10px] leading-tight truncate mt-0.5">{source.snippet}</p>
+                                </div>
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {msg.role === 'assistant' && (
+                        <button 
+                          onClick={() => exportarParaPDF(msg.content, msg.sources)} 
+                          className="mt-4 flex items-center gap-2 text-[10px] bg-white/5 hover:bg-primary/20 p-2.5 rounded-lg border border-white/10 transition-all duration-200 uppercase font-bold tracking-wider hover:scale-105 shadow-lg hover:shadow-primary/20"
+                        >
+                          <FileText size={12} /> Gerar Relatório PDF
+                        </button>
+                      )}
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+              {isTyping && <div className="flex gap-4 mb-8"><div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center"><div className="w-2 h-2 rounded-full bg-primary animate-pulse" /></div><TypingIndicator /></div>}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </main>
+
+        <footer className="p-6 bg-gradient-to-t from-background to-transparent relative">
+          <div className="max-w-3xl mx-auto relative h-auto">
+            <div className="relative z-10 flex items-end gap-2 bg-black/80 border border-white/10 rounded-[1.5rem] p-2.5 transition-all duration-300 backdrop-blur-[40px] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+              <button onClick={toggleVoice} className={`p-2.5 rounded-xl transition-all ${audioAnalyzer.isActive ? "bg-primary text-primary-foreground shadow-[0_0_15px_rgba(var(--primary),0.5)]" : "text-muted-foreground hover:bg-white/5"}`}>
+                {audioAnalyzer.isActive ? <MicOff size={18} /> : <Mic size={18} />}
+              </button>
+              
+              <textarea 
+                ref={textareaRef} 
+                value={input} 
+                onChange={(e) => setInput(e.target.value)} 
+                onKeyDown={handleKeyDown} 
+                placeholder={userId ? "Injete um comando..." : "Digite seu nome para iniciar..."} 
+                rows={1} 
+                className="flex-1 bg-transparent border-0 focus:border-0 focus:ring-0 focus:outline-none resize-none text-sm py-2.5 placeholder:text-muted-foreground/30 font-sans chat-scrollbar overflow-y-auto text-white" 
+              />
+              
+              <button onClick={handleSend} disabled={!input.trim() || isTyping} className="p-2.5 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 shadow-lg active:scale-95 transition-all group">
+                {isTyping ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+              </button>
+            </div>
+            <p className="text-center text-[8px] text-muted-foreground/20 mt-4 font-mono uppercase tracking-[0.5em] animate-pulse">Neural Lab // Protocol 6.0</p>
+          </div>
+        </footer>
+      </div>
+
+      <AnimatePresence>
+        {showVoiceOrb && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-3xl flex flex-col items-center justify-center">
+            <NeuralOrb isActive={audioAnalyzer.isActive} volume={audioAnalyzer.volume} frequency={audioAnalyzer.frequency} isProcessing={audioAnalyzer.isProcessing} />
+            <button onClick={toggleVoice} className="mt-12 p-5 rounded-full bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white transition-all"><MicOff size={24} /></button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
