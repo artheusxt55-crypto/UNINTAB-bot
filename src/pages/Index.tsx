@@ -57,23 +57,27 @@ export default function Index() {
     if (savedId) setUserId(savedId);
   }, []);
 
+  // --- CONFIGURAÇÃO DA ANIMAÇÃO DE TEXTO ---
+  const sentence = "Como posso ajudar?";
+  const letterVariants = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+  };
+
   // --- MOTOR GRÁFICO DE INFOGRÁFICOS (AURA PDF ENGINE V7) ---
   const exportarParaPDF = (texto: string) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
 
-    // 1. Limpeza de formatação Markdown
     const textoLimpo = texto.replace(/[*#`_]/g, '').trim();
     const linhas = textoLimpo.split('\n').filter(l => l.trim() !== "");
 
-    // 2. Estilização de Fundo e Margens
-    doc.setFillColor(248, 249, 250); // Fundo cinza claríssimo
+    doc.setFillColor(248, 249, 250);
     doc.rect(0, 0, pageWidth, pageHeight, 'F');
-    doc.setFillColor(227, 6, 19); // Barra lateral UNINTA
+    doc.setFillColor(227, 6, 19);
     doc.rect(0, 0, 4, pageHeight, 'F');
 
-    // Cabeçalho Profissional
     doc.setTextColor(227, 6, 19);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(22);
@@ -89,56 +93,40 @@ export default function Index() {
     const startX = 15;
 
     linhas.forEach((linha) => {
-      // Identifica o nível de hierarquia pelo recuo (espaços à esquerda)
       const recuo = linha.search(/\S/); 
       const textoFinal = linha.trim();
       
       if (recuo === 0) {
-        // TÓPICO PRINCIPAL (BALÃO DESTAQUE)
         cursorY += 6;
-        doc.setFillColor(227, 6, 19); // Vermelho
+        doc.setFillColor(227, 6, 19);
         doc.roundedRect(startX, cursorY - 7, pageWidth - 35, 11, 2, 2, 'F');
-        
         doc.setTextColor(255, 255, 255);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11);
         doc.text(textoFinal.toUpperCase(), startX + 5, cursorY);
         cursorY += 14;
       } else {
-        // SUB-TÓPICOS COM SETAS E CARDS (ESTILO INFOGRÁFICO)
         const indentLevel = Math.min(recuo * 2, 25);
         const cardWidth = pageWidth - (startX + indentLevel + 30);
-        
-        // Desenha a Seta (Linha Conectora Orgânica)
         doc.setDrawColor(200, 200, 200);
         doc.setLineWidth(0.4);
-        doc.line(startX + 6, cursorY - 12, startX + 6, cursorY - 3); // Vertical
-        doc.line(startX + 6, cursorY - 3, startX + indentLevel, cursorY - 3); // Horizontal
-        
-        // Desenha o Card do Conteúdo
+        doc.line(startX + 6, cursorY - 12, startX + 6, cursorY - 3);
+        doc.line(startX + 6, cursorY - 3, startX + indentLevel, cursorY - 3);
         doc.setFillColor(255, 255, 255);
         doc.setDrawColor(220, 220, 220);
-        
         const splitTexto = doc.splitTextToSize(textoFinal, cardWidth - 10);
         const cardHeight = (splitTexto.length * 5) + 6;
-        
-        // Sombra leve para o card
         doc.setFillColor(240, 240, 240);
         doc.roundedRect(startX + indentLevel + 0.5, cursorY - 8.5, cardWidth, cardHeight, 1.5, 1.5, 'F');
-        
-        // Card Principal
         doc.setFillColor(255, 255, 255);
         doc.roundedRect(startX + indentLevel, cursorY - 9, cardWidth, cardHeight, 1.5, 1.5, 'FD');
-        
         doc.setTextColor(50, 50, 50);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(10);
         doc.text(splitTexto, startX + indentLevel + 5, cursorY - 3);
-        
         cursorY += cardHeight + 4;
       }
 
-      // Quebra de página automática
       if (cursorY > 275) {
         doc.addPage();
         doc.setFillColor(248, 249, 250);
@@ -149,11 +137,9 @@ export default function Index() {
       }
     });
 
-    // Rodapé de Segurança
     doc.setFontSize(7);
     doc.setTextColor(180, 180, 180);
     doc.text("Documento gerado por Aura AI - Unidade de Inteligência Lab-Neuro", 15, pageHeight - 10);
-
     doc.save(`MAPA_AURA_${userId || 'lab'}_${Date.now()}.pdf`);
   };
 
@@ -283,7 +269,20 @@ export default function Index() {
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-8 opacity-80 scale-90 drop-shadow-2xl">
                 <NeuralOrb isActive={audioAnalyzer.isActive} volume={audioAnalyzer.volume} frequency={audioAnalyzer.frequency} isProcessing={audioAnalyzer.isProcessing} size="md" />
               </motion.div>
-              <h2 className="text-3xl font-semibold tracking-tight text-white/90">Aura Online</h2>
+              
+              <motion.h2 
+                className="text-4xl font-light tracking-tight text-white/90"
+                initial="initial"
+                animate="animate"
+                transition={{ staggerChildren: 0.05 }}
+              >
+                {sentence.split("").map((char, index) => (
+                  <motion.span key={index} variants={letterVariants}>
+                    {char}
+                  </motion.span>
+                ))}
+              </motion.h2>
+
               <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-muted-foreground/40 mt-3 italic">Lab Neuro-UNINTA // Pronta para análise neural</p>
             </div>
           ) : (
