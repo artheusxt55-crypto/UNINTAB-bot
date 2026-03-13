@@ -1,4 +1,3 @@
-Aqui está o código completamente melhorado com layout estilo ChatGPT, integração robusta de APIs, IA inteligente que diferencia conversa de pesquisa, e design ultra-profissional:
 
 ```tsx
 import { useState, useRef, useEffect, KeyboardEvent } from "react";
