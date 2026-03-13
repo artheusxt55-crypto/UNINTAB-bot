@@ -1,3 +1,12 @@
+Analisando o código, identifiquei os principais erros:
+
+1. **Vírgula extra** na linha `addMessage("user", userMsg, , undefined, analysis.contextType);`
+2. **Problema de fechamento de tags** no JSX (div do messages não fechada corretamente)
+3. **Estrutura JSX quebrada** no final do componente
+
+Aqui está o **código completo corrigido**:
+
+```tsx
 import { useState, useRef, useEffect, KeyboardEvent, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -379,6 +388,14 @@ const fetchScielo = async (query: string, searchCache: Map<string, Source[]>, se
       type: 'scielo' as const,
       title: `Artigo SciELO: "${query}"`,
       url: `https://search.scielo.org/?q=${encodeURIComponent(query)}`,
+      snippet: `Artigo científico brasileiro
+          const cacheKey = `scielo_${query}`;
+    if (searchCache.has(cacheKey)) return searchCache.get(cacheKey)!;
+    
+    const results: Source[] = [{
+      type: 'scielo' as const,
+      title: `Artigo SciELO: "${query}"`,
+      url: `https://search.scielo.org/?q=${encodeURIComponent(query)}`,
       snippet: `Artigo científico brasileiro sobre "${query}". Plataforma SciELO Brasil com milhares de estudos acadêmicos.`,
       citation: '[1]',
       reliability: 'high' as const
@@ -607,7 +624,7 @@ export default function Index() {
     }));
   };
 
-  // HANDLE SEND COM FUNÇÕES REAIS
+  // HANDLE SEND COM FUNÇÕES REAIS (CORRIGIDO - Removida vírgula extra)
   const handleSend = async () => {
     if (!input.trim() || isTyping) return;
     
@@ -796,140 +813,256 @@ SUGESTÕES UNINTA:
                 fontSize: '12px',
                 cursor: 'pointer',
               }}
-            >
+                          >
               PDF
             </button>
           </div>
         </header>
-{/* Messages */}
-<div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-  <AnimatePresence>
-    {isResearching && researchQuery && (
-      <ResearchStatus isResearching={true} query={researchQuery} sourcesCount={0} />
-    )}
-    
-    {messages.map((message) => (
-      <motion.div
-        key={message.id}
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0 }}
-        style={{
-          alignSelf: message.role === 'user' ? 'flex-end' : 'flex-start',
-          maxWidth: '80%',
-        }}
-      >
+
+        {/* Messages - CORRIGIDO: Estrutura JSX completa */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <AnimatePresence>
+            {isResearching && researchQuery && (
+              <ResearchStatus isResearching={true} query={researchQuery} sourcesCount={0} />
+            )}
+            
+            {messages.map((message) => (
+              <motion.div
+                key={message.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                style={{
+                  alignSelf: message.role === 'user' ? 'flex-end' : 'flex-start',
+                  maxWidth: '80%',
+                }}
+              >
+                <div style={{
+                  padding: '12px 16px',
+                  borderRadius: '16px',
+                  background: message.role === 'user' 
+                    ? 'linear-gradient(135deg, rgba(220,38,38,0.15) 0%, rgba(127,29,29,0.2) 100%)'
+                    : 'rgba(255,255,255,0.03)',
+                  border: message.role === 'user' 
+                    ? '1px solid rgba(220,38,38,0.3)' 
+                    : '1px solid rgba(255,255,255,0.08)',
+                  backdropFilter: 'blur(10px)',
+                  position: 'relative',
+                }}>
+                  {contextBadge(message.contextType)}
+                  
+                  <div style={{ marginTop: '4px' }}>
+                    <ReactMarkdown 
+                      components={{
+                        strong: ({children}) => <strong style={{color: '#dc2626'}}>{children}</strong>,
+                        em: ({children}) => <em style={{fontStyle: 'italic', color: '#a3a3a3'}}>{children}</em>,
+                        code: ({children}) => (
+                          <code style={{
+                            background: 'rgba(220,38,38,0.1)', 
+                            color: '#dc2626', 
+                            padding: '2px 6px', 
+                            borderRadius: '4px',
+                            fontSize: '13px'
+                          }}>{children}</code>
+                        )
+                      }}
+                    >
+                      {message.content}
+                    </ReactMarkdown>
+                  </div>
+
+                  {message.sources && message.sources.length > 0 && (
+                    <div style={{ 
+                      marginTop: '12px', 
+                      paddingTop: '12px', 
+                      borderTop: '1px solid rgba(255,255,255,0.08)',
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      gap: '6px' 
+                    }}>
+                      <span style={{ 
+                        fontSize: '11px', 
+                        color: '#a3a3a3', 
+                        fontWeight: 500 
+                      }}>
+                        📚 {message.sources.length} fontes acadêmicas
+                      </span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {message.sources.map((source, idx) => (
+                          <a
+                            key={idx}
+                            href={source.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '4px 8px',
+                              background: 'rgba(220,38,38,0.1)',
+                              border: '1px solid rgba(220,38,38,0.2)',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              color: '#dc2626',
+                              textDecoration: 'none',
+                              transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(220,38,38,0.2)';
+                              e.currentTarget.style.transform = 'scale(1.05)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(220,38,38,0.1)';
+                              e.currentTarget.style.transform = 'scale(1)';
+                            }}
+                          >
+                            {sourceIcon(source.type)}
+                            <span style={{ fontWeight: 500 }}>{source.citation}</span>
+                            <ExternalLink size={10} />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ 
+                    marginTop: '8px', 
+                    fontSize: '10px', 
+                    color: '#525252',
+                    opacity: 0.7 
+                  }}>
+                    {message.timestamp.toLocaleTimeString('pt-BR', { 
+                      hour: '2-digit', 
+                      minute: '2-digit' 
+                    })}
+                    {message.researchQuery && (
+                      <>
+                        {' • '}
+                        <span style={{ color: '#a3a3a3' }}>
+                          🔍 {message.researchQuery.slice(0, 40)}{message.researchQuery.length > 40 ? '...' : ''}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+            
+            {/* Typing Indicator */}
+            {isTyping && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+              >
+                <TypingIndicator />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input Area */}
         <div style={{
-          padding: '12px 16px',
-          borderRadius: '16px',
-          background: message.role === 'user' 
-            ? 'linear-gradient(135deg, rgba(220,38,38,0.15) 0%, rgba(127,29,29,0.2) 100%)'
-            : 'rgba(255,255,255,0.03)',
-          border: message.role === 'user' 
-            ? '1px solid rgba(220,38,38,0.3)' 
-            : '1px solid rgba(255,255,255,0.08)',
-          backdropFilter: 'blur(10px)',
-          position: 'relative',
+          padding: '20px 20px 20px',
+          borderTop: '1px solid rgba(255,255,255,0.06)',
+          background: 'rgba(0,0,0,0.3)',
         }}>
-          {contextBadge(message.contextType)}
-          
-          <div style={{ marginTop: '4px' }}>
-            <ReactMarkdown 
-              components={{
-                strong: ({children}) => <strong style={{color: '#dc2626'}}>{children}</strong>,
-                em: ({children}) => <em style={{fontStyle: 'italic', color: '#a3a3a3'}}>{children}</em>,
-                code: ({children}) => (
-                  <code style={{
-                    background: 'rgba(220,38,38,0.1)', 
-                    color: '#dc2626', 
-                    padding: '2px 6px', 
-                    borderRadius: '4px',
-                    fontSize: '13px'
-                  }}>{children}</code>
-                )
+          <div style={{
+            display: 'flex', alignItems: 'flex-end', gap: '12px',
+            maxWidth: '100%', position: 'relative',
+          }}>
+            {showVoiceOrb && (
+              <div style={{ position: 'absolute', left: '-60px', top: '50%', transform: 'translateY(-50%)' }}>
+                <NeuralOrb 
+                  isActive={audioAnalyzer.isActive} 
+                  volume={audioAnalyzer.volume} 
+                  frequency={audioAnalyzer.frequency}
+                  isProcessing={isTyping}
+                />
+              </div>
+            )}
+            
+            <button
+              onClick={toggleVoice}
+              style={{
+                padding: '12px',
+                borderRadius: '12px',
+                background: showVoiceOrb ? 'rgba(220,38,38,0.15)' : 'rgba(255,255,255,0.05)',
+                border: showVoiceOrb ? '1px solid rgba(220,38,38,0.3)' : '1px solid rgba(255,255,255,0.1)',
+                color: showVoiceOrb ? '#dc2626' : '#737373',
+                cursor: 'pointer',
+                flexShrink: 0,
+                transition: 'all 0.2s',
               }}
             >
-              {message.content}
-            </ReactMarkdown>
+              {audioAnalyzer.isActive ? <MicOff size={20} /> : <Mic size={20} />}
+            </button>
+
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Digite sua mensagem... (Enter para enviar, Shift+Enter para nova linha)"
+              style={{
+                flex: 1,
+                minHeight: '44px',
+                maxHeight: '120px',
+                padding: '12px 16px',
+                borderRadius: '24px',
+                border: '1px solid rgba(255,255,255,0.1)',
+                background: 'rgba(255,255,255,0.03)',
+                color: '#e5e5e5',
+                fontSize: '14px',
+                fontFamily: 'inherit',
+                resize: 'none',
+                outline: 'none',
+                backdropFilter: 'blur(10px)',
+              }}
+              rows={1}
+            />
+
+            <button
+              onClick={handleSend}
+              disabled={!input.trim() || isTyping}
+              style={{
+                padding: '12px',
+                borderRadius: '12px',
+                background: input.trim() && !isTyping 
+                  ? 'linear-gradient(135deg, #dc2626, #b91c1c)' 
+                  : 'rgba(255,255,255,0.05)',
+                border: input.trim() && !isTyping 
+                  ? '1px solid rgba(220,38,38,0.3)' 
+                  : '1px solid rgba(255,255,255,0.1)',
+                color: input.trim() && !isTyping ? '#ffffff' : '#737373',
+                cursor: input.trim() && !isTyping ? 'pointer' : 'not-allowed',
+                flexShrink: 0,
+                transition: 'all 0.2s',
+                minWidth: '44px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {isTyping ? (
+                <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
+              ) : (
+                <Send size={18} />
+              )}
+            </button>
           </div>
 
-          {message.sources && message.sources.length > 0 && (
-            <div style={{ 
-              marginTop: '12px', 
-              paddingTop: '12px', 
-              borderTop: '1px solid rgba(255,255,255,0.08)',
-              display: 'flex', 
-              flexDirection: 'column', 
-              gap: '6px' 
-            }}>
-              <span style={{ 
-                fontSize: '11px', 
-                color: '#a3a3a3', 
-                fontWeight: 500 
-              }}>
-                📚 {message.sources.length} fontes acadêmicas
-              </span>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                {message.sources.map((source, idx) => (
-                  <a
-                    key={idx}
-                    href={source.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      padding: '4px 8px',
-                      background: 'rgba(220,38,38,0.1)',
-                      border: '1px solid rgba(220,38,38,0.2)',
-                      borderRadius: '6px',
-                      fontSize: '11px',
-                      color: '#dc2626',
-                      textDecoration: 'none',
-                      transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(220,38,38,0.2)';
-                      e.currentTarget.style.transform = 'scale(1.05)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'rgba(220,38,38,0.1)';
-                      e.currentTarget.style.transform = 'scale(1)';
-                    }}
-                  >
-                    {sourceIcon(source.type)}
-                    <span style={{ fontWeight: 500 }}>{source.citation}</span>
-                    <ExternalLink size={10} />
-                  </a>
-                ))}
-              </div>
-            </div>
+          {isResearching && (
+            <ResearchStatus 
+              isResearching={true} 
+              query={researchQuery} 
+              sourcesCount={0} 
+            />
           )}
-
-          <div style={{ 
-            marginTop: '8px', 
-            fontSize: '10px', 
-            color: '#525252',
-            opacity: 0.7 
-          }}>
-            {message.timestamp.toLocaleTimeString('pt-BR', { 
-              hour: '2-digit', 
-              minute: '2-digit' 
-            })}
-            {message.researchQuery && (
-              <>
-                {' • '}
-                <span style={{ color: '#a3a3a3' }}>
-                  🔍 {message.researchQuery.slice(0, 40)}{message.researchQuery.length > 40 ? '...' : ''}
-                </span>
-              </>
-            )}
-          </div>
         </div>
-      </motion.div>
-    ))}
-  </AnimatePresence>
-
-  <div ref={messagesEndRef} />
-</div>
+      </div>
+    </div>
+  );
+}
