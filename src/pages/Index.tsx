@@ -414,7 +414,30 @@ Pergunta: ${userMsg}`;
                         <Zap size={14} className="text-primary animate-pulse" />
                       </div>
                     )}
-         rel="noopener noreferrer"
+                   <div className={`flex-1 max-w-[80%] space-y-2 ${msg.role === "user" ? "text-right" : ""}`}>
+                      <div className={`inline-block p-4 rounded-2xl text-sm leading-relaxed shadow-sm ${
+                        msg.role === "user" 
+                          ? "bg-primary text-primary-foreground rounded-tr-none" 
+                          : "bg-white/5 border border-white/10 text-white/90 rounded-tl-none backdrop-blur-md"
+                      }`}>
+                        <ReactMarkdown className="prose prose-invert prose-sm max-w-none">
+                          {msg.content}
+                        </ReactMarkdown>
+                      </div>
+
+                      {/* EXIBIÇÃO DE FONTES/FONTES ACADÊMICAS */}
+                      {msg.sources && msg.sources.length > 0 && (
+                        <div className="mt-4 space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                          <p className="text-[10px] font-mono text-primary/60 uppercase tracking-widest flex items-center gap-2">
+                            <Search size={10} /> Embasamento Científico Encontrado:
+                          </p>
+                          <div className="grid grid-cols-1 gap-2">
+                            {msg.sources.map((source, idx) => (
+                              <a 
+                                key={idx} 
+                                href={source.url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
                                 className="flex items-start gap-2 p-2.5 rounded-lg bg-white/5 hover:bg-primary/10 border border-white/5 text-xs group transition-all duration-200 hover:shadow-lg hover:scale-[1.02]"
                               >
                                 <div className="w-6 h-6 mt-0.5 flex-shrink-0 rounded-sm flex items-center justify-center text-xs font-bold bg-primary/20 border border-primary/30">
@@ -462,14 +485,15 @@ Pergunta: ${userMsg}`;
                 onKeyDown={handleKeyDown} 
                 placeholder={userId ? "Injete um comando..." : "Digite seu nome para iniciar..."} 
                 rows={1} 
-                className="flex-1 bg-transparent border-0 focus:border-0 focus:ring-0 focus:outline-none resize-none text-sm py-2.5 placeholder:text-muted-foreground/30 font-sans chat-scrollbar overflow-y-auto text-white" 
+                style={{ border: 'none', boxShadow: 'none', outline: 'none', background: 'transparent' }}
+                className="flex-1 bg-transparent border-0 focus:border-0 focus:ring-0 focus:outline-none resize-none text-sm py-2.5 placeholder:text-muted-foreground/30 font-sans chat-scrollbar overflow-y-auto text-white selection:bg-primary/40" 
               />
               
-              <button onClick={handleSend} disabled={!input.trim() || isTyping} className="p-2.5 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 shadow-lg active:scale-95 transition-all group">
-                {isTyping ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+              <button onClick={handleSend} disabled={!input.trim() || isTyping} className="p-2.5 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 shadow-lg active:scale-95 transition-all group hover:shadow-[0_0_20px_rgba(var(--primary),0.4)]">
+                {isTyping ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} className="group-hover:translate-x-0.5 transition-transform" />}
               </button>
             </div>
-            <p className="text-center text-[8px] text-muted-foreground/20 mt-4 font-mono uppercase tracking-[0.5em] animate-pulse">Neural Lab // Protocol 6.0</p>
+            <p className="text-center text-[8px] text-muted-foreground/20 mt-4 font-mono uppercase tracking-[0.5em] animate-pulse">Neural Lab // Protocol 6.0 // ArXiv + Wikipedia</p>
           </div>
         </footer>
       </div>
@@ -478,7 +502,7 @@ Pergunta: ${userMsg}`;
         {showVoiceOrb && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-3xl flex flex-col items-center justify-center">
             <NeuralOrb isActive={audioAnalyzer.isActive} volume={audioAnalyzer.volume} frequency={audioAnalyzer.frequency} isProcessing={audioAnalyzer.isProcessing} />
-            <button onClick={toggleVoice} className="mt-12 p-5 rounded-full bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white transition-all"><MicOff size={24} /></button>
+            <button onClick={toggleVoice} className="mt-12 p-5 rounded-full bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive hover:text-white transition-all shadow-[0_0_30px_rgba(var(--destructive),0.2)]"><MicOff size={24} /></button>
           </motion.div>
         )}
       </AnimatePresence>
