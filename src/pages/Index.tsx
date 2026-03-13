@@ -1,4 +1,3 @@
-# 🧠 **CÓDIGO HÍBRIDO FINAL** - UI do Código 1 + Lógica Real do Código 2
 
 ```tsx
 import { useState, useRef, useEffect, KeyboardEvent, useCallback } from "react";
