@@ -1,4 +1,3 @@
-Aqui está o código corrigido com **rolamento melhorado**, **mais informações nas diretrizes** e **animação "Como Posso Ajudar?"**:
 
 ```tsx
 import { useState, useRef, useEffect, KeyboardEvent } from "react";
