@@ -414,7 +414,7 @@ Pergunta: ${userMsg}`;
                         <Zap size={14} className="text-primary animate-pulse" />
                       </div>
                     )}
-                 rel="noopener noreferrer"
+         rel="noopener noreferrer"
                                 className="flex items-start gap-2 p-2.5 rounded-lg bg-white/5 hover:bg-primary/10 border border-white/5 text-xs group transition-all duration-200 hover:shadow-lg hover:scale-[1.02]"
                               >
                                 <div className="w-6 h-6 mt-0.5 flex-shrink-0 rounded-sm flex items-center justify-center text-xs font-bold bg-primary/20 border border-primary/30">
