@@ -52,28 +52,80 @@ export default function Index() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const audioAnalyzer = useAudioAnalyzer();
 
-  // --- FUNÇÕES ADICIONADAS (LÓGICA DE PERSISTÊNCIA E PDF) ---
   useEffect(() => {
     const savedId = localStorage.getItem('untbot_last_id');
     if (savedId) setUserId(savedId);
   }, []);
 
+  // --- MODELO MANEIRO: EXPORTAR PARA PDF PROFISSIONAL ---
   const exportarParaPDF = (texto: string) => {
     const doc = new jsPDF();
-    doc.setFillColor(227, 6, 19);
-    doc.rect(0, 0, 210, 25, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(16);
-    doc.text("UNINTA - RELATÓRIO DE SINAPSE NEURAL", 15, 16);
-    doc.setFontSize(8);
-    doc.text(`ID: ${userId.toUpperCase()} | DATA: ${new Date().toLocaleDateString()}`, 140, 16);
-    doc.setTextColor(50, 50, 50);
-    doc.setFontSize(11);
-    const splitText = doc.splitTextToSize(texto.replace(/[*#]/g, ''), 180);
-    doc.text(splitText, 15, 40);
-    doc.save(`sinapse_${userId || 'lab'}_${Date.now()}.pdf`);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    // 1. LIMPEZA DE SÍMBOLOS (Remove asteriscos e lixo de MD)
+    const textoLimpo = texto.replace(/[*#`_]/g, '').trim();
+    const linhas = textoLimpo.split('\n').filter(l => l.trim() !== "");
+
+    // 2. DESIGN DO CABEÇALHO (Estilo UNINTA)
+    doc.setFillColor(227, 6, 19); // Vermelho Institucional
+    doc.rect(0, 0, 6, pageHeight, 'F'); // Barra lateral
+
+    doc.setFillColor(245, 245, 245);
+    doc.rect(6, 0, pageWidth - 6, 40, 'F');
+    
+    doc.setTextColor(227, 6, 19);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.text("MAPA MENTAL NEURAL", 15, 20);
+    
+    doc.setTextColor(80, 80, 80);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text("CENTRO UNIVERSITÁRIO INTA - UNINTA | LAB NEURO", 15, 28);
+    doc.text(`OPERADOR: ${userId.toUpperCase() || 'LAB_ASSISTANT'} | EMISSÃO: ${new Date().toLocaleDateString()}`, 15, 34);
+
+    // 3. RENDERIZAÇÃO DOS BLOCOS TÉCNICOS
+    let cursorY = 55;
+
+    linhas.forEach((linha) => {
+      const eTopico = !linha.startsWith("    ") && !linha.startsWith("  ");
+      
+      if (eTopico) {
+        doc.setFillColor(227, 6, 19);
+        doc.roundedRect(12, cursorY - 5, 3, 10, 1, 1, 'F');
+        doc.setTextColor(30, 30, 30);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.text(linha.toUpperCase().trim(), 18, cursorY + 2);
+        doc.setDrawColor(230, 230, 230);
+        doc.line(18, cursorY + 5, pageWidth - 15, cursorY + 5);
+        cursorY += 15;
+      } else {
+        doc.setTextColor(70, 70, 70);
+        doc.setFont("courier", "normal"); 
+        doc.setFontSize(10);
+        const textoRamo = linha.trim();
+        const splitInfo = doc.splitTextToSize(`> ${textoRamo}`, 175);
+        doc.text(splitInfo, 22, cursorY);
+        cursorY += (splitInfo.length * 6) + 2;
+      }
+
+      if (cursorY > 275) {
+        doc.addPage();
+        doc.setFillColor(227, 6, 19);
+        doc.rect(0, 0, 6, pageHeight, 'F');
+        cursorY = 25;
+      }
+    });
+
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(7);
+    doc.setTextColor(180, 180, 180);
+    doc.text("Aura AI V6 - Protocolo de Inteligência Lab-Neuro", 15, pageHeight - 10);
+
+    doc.save(`MAPA_NEURAL_${userId || 'lab'}_${Date.now()}.pdf`);
   };
-  // -------------------------------------------------------
 
   const activeConversation = conversations.find((c) => c.id === activeConvId) || conversations[0];
   const messages = activeConversation.messages;
@@ -107,7 +159,6 @@ export default function Index() {
     if (!input.trim() || isTyping) return;
     const userMsg = input.trim();
 
-    // Lógica de Identificação sem quebrar o fluxo
     if (!userId) {
       setUserId(userMsg.toLowerCase());
       localStorage.setItem('untbot_last_id', userMsg.toLowerCase());
@@ -208,7 +259,7 @@ export default function Index() {
                 <NeuralOrb isActive={audioAnalyzer.isActive} volume={audioAnalyzer.volume} frequency={audioAnalyzer.frequency} isProcessing={audioAnalyzer.isProcessing} size="md" />
               </motion.div>
               <h2 className="text-3xl font-semibold tracking-tight text-white/90">Como posso ajudar?</h2>
-              <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-muted-foreground/40 mt-3 italic">Lab Neuro-UNINTA // Assistant Online</p>
+              <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-muted-foreground/40 mt-3 italic">Lab Neuro-UNINTA // Operador: {userId || 'Untbot'}</p>
             </div>
           ) : (
             <div className="max-w-3xl mx-auto w-full py-10 space-y-8">
@@ -223,13 +274,12 @@ export default function Index() {
                     <div className={`p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed backdrop-blur-md border shadow-2xl ${msg.role === "user" ? "bg-primary/90 text-primary-foreground border-primary/20" : "bg-white/5 border-white/10 text-white/90"}`}>
                       <ReactMarkdown className="prose prose-invert prose-sm max-w-none">{msg.content}</ReactMarkdown>
                       
-                      {/* BOTÃO PDF INTEGRADO SEM QUEBRAR O LAYOUT */}
                       {msg.role === 'assistant' && (
                         <button 
                           onClick={() => exportarParaPDF(msg.content)} 
-                          className="mt-3 flex items-center gap-2 text-[10px] bg-white/5 hover:bg-primary/20 p-2 rounded border border-white/10 transition-all uppercase font-bold tracking-tighter"
+                          className="mt-3 flex items-center gap-2 text-[10px] bg-white/5 hover:bg-primary/30 p-2 rounded border border-white/10 transition-all uppercase font-bold tracking-tighter"
                         >
-                          <FileText size={12} /> Gerar Relatório PDF
+                          <FileText size={12} /> Gerar Laudo PDF
                         </button>
                       )}
                     </div>
@@ -254,19 +304,17 @@ export default function Index() {
                 value={input} 
                 onChange={(e) => setInput(e.target.value)} 
                 onKeyDown={handleKeyDown} 
-                placeholder={userId ? "Injete um comando..." : "Digite seu nome para iniciar..."} 
+                placeholder={userId ? "Injete um comando..." : "Identifique-se para iniciar..."} 
                 rows={1} 
                 autoComplete="off"
                 spellCheck="false"
-                style={{ border: 'none', boxShadow: 'none', outline: 'none', background: 'transparent' }}
-                className="flex-1 bg-transparent border-0 focus:border-0 focus:ring-0 focus:outline-none resize-none text-sm py-2.5 placeholder:text-muted-foreground/30 font-sans chat-scrollbar overflow-y-auto shadow-none outline-none appearance-none text-white selection:bg-primary/40" 
+                className="flex-1 bg-transparent border-0 focus:border-0 focus:ring-0 focus:outline-none resize-none text-sm py-2.5 placeholder:text-muted-foreground/30 font-sans chat-scrollbar overflow-y-auto text-white shadow-none" 
               />
               
               <button onClick={handleSend} disabled={!input.trim() || isTyping} className="p-2.5 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 shadow-lg active:scale-95 transition-all group hover:shadow-[0_0_20px_rgba(var(--primary),0.4)]">
                 {isTyping ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} className="group-hover:translate-x-0.5 transition-transform" />}
               </button>
             </div>
-            <p className="text-center text-[8px] text-muted-foreground/20 mt-4 font-mono uppercase tracking-[0.5em] animate-pulse">Neural Lab // Protocol 6.0</p>
           </div>
         </footer>
       </div>
