@@ -801,131 +801,136 @@ SUGESTÕES UNINTA:
             </button>
           </div>
         </header>
-
-        {/* Messages */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <AnimatePresence>
-            {isResearching && researchQuery && (
-              <ResearchStatus isResearching={true} query={researchQuery} sourcesCount={0} />
-            )}
-            
-            {messages.map((message) => (
-             <motion.div
-  key={message.id}
-  initial={{ opacity: 0, y: 20 }}
-  animate={{ opacity: 1, y: 0 }}
-  exit={{ opacity: 0 }}
-  style={{
-    alignSelf: message.role === 'user' ? 'flex-end' : 'flex-start',
-    maxWidth: '80%',
-  }}
->
-  <div style={{
-    padding: '12px 16px',
-    borderRadius: '16px',
-    background: message.role === 'user' 
-      ? 'linear-gradient(135deg, rgba(220,38,38,0.15) 0%, rgba(127,29,29,0.2) 100%)'
-      : 'rgba(255,255,255,0.03)',
-    border: message.role === 'user' 
-      ? '1px solid rgba(220,38,38,0.3)' 
-      : '1px solid rgba(255,255,255,0.08)',
-    backdropFilter: 'blur(10px)',
-    position: 'relative',
-  }}>
-    {contextBadge(message.contextType)}
+{/* Messages */}
+<div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+  <AnimatePresence>
+    {isResearching && researchQuery && (
+      <ResearchStatus isResearching={true} query={researchQuery} sourcesCount={0} />
+    )}
     
-    <div style={{ marginTop: '4px' }}>
-      <ReactMarkdown 
-        components={{
-          strong: ({children}) => <strong style={{color: '#dc2626'}}>{children}</strong>,
-          em: ({children}) => <em style={{fontStyle: 'italic', color: '#a3a3a3'}}>{children}</em>,
-          code: ({children}) => (
-            <code style={{
-              background: 'rgba(220,38,38,0.1)', 
-              color: '#dc2626', 
-              padding: '2px 6px', 
-              borderRadius: '4px',
-              fontSize: '13px'
-            }}>{children}</code>
-          )
+    {messages.map((message) => (
+      // 👇 COLE TODO O SEU CÓDIGO AQUI - está perfeito!
+      <motion.div
+        key={message.id}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0 }}
+        style={{
+          alignSelf: message.role === 'user' ? 'flex-end' : 'flex-start',
+          maxWidth: '80%',
         }}
       >
-        {message.content}
-      </ReactMarkdown>
-    </div>
-
-    {message.sources && message.sources.length > 0 && (
-      <div style={{ 
-        marginTop: '12px', 
-        paddingTop: '12px', 
-        borderTop: '1px solid rgba(255,255,255,0.08)',
-        display: 'flex', 
-        flexDirection: 'column', 
-        gap: '6px' 
-      }}>
-        <span style={{ 
-          fontSize: '11px', 
-          color: '#a3a3a3', 
-          fontWeight: 500 
+        <div style={{
+          padding: '12px 16px',
+          borderRadius: '16px',
+          background: message.role === 'user' 
+            ? 'linear-gradient(135deg, rgba(220,38,38,0.15) 0%, rgba(127,29,29,0.2) 100%)'
+            : 'rgba(255,255,255,0.03)',
+          border: message.role === 'user' 
+            ? '1px solid rgba(220,38,38,0.3)' 
+            : '1px solid rgba(255,255,255,0.08)',
+          backdropFilter: 'blur(10px)',
+          position: 'relative',
         }}>
-          📚 {message.sources.length} fontes acadêmicas
-        </span>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-          {message.sources.map((source, idx) => (
-            <a
-              key={idx}
-              href={source.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 8px',
-                background: 'rgba(220,38,38,0.1)',
-                border: '1px solid rgba(220,38,38,0.2)',
-                borderRadius: '6px',
-                fontSize: '11px',
-                color: '#dc2626',
-                textDecoration: 'none',
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.background = 'rgba(220,38,38,0.2)';
-                e.currentTarget.style.transform = 'scale(1.05)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.background = 'rgba(220,38,38,0.1)';
-                e.currentTarget.style.transform = 'scale(1)';
+          {contextBadge(message.contextType)}
+          
+          <div style={{ marginTop: '4px' }}>
+            <ReactMarkdown 
+              components={{
+                strong: ({children}) => <strong style={{color: '#dc2626'}}>{children}</strong>,
+                em: ({children}) => <em style={{fontStyle: 'italic', color: '#a3a3a3'}}>{children}</em>,
+                code: ({children}) => (
+                  <code style={{
+                    background: 'rgba(220,38,38,0.1)', 
+                    color: '#dc2626', 
+                    padding: '2px 6px', 
+                    borderRadius: '4px',
+                    fontSize: '13px'
+                  }}>{children}</code>
+                )
               }}
             >
-              {sourceIcon(source.type)}
-              <span style={{ fontWeight: 500 }}>{source.citation}</span>
-              <ExternalLink size={10} />
-            </a>
-          ))}
-        </div>
-      </div>
-    )}
+              {message.content}
+            </ReactMarkdown>
+          </div>
 
-    <div style={{ 
-      marginTop: '8px', 
-      fontSize: '10px', 
-      color: '#525252',
-      opacity: 0.7 
-    }}>
-      {message.timestamp.toLocaleTimeString('pt-BR', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      })}
-      {message.researchQuery && (
-        <>
-          {' • '}
-          <span style={{ color: '#a3a3a3' }}>
-            🔍 {message.researchQuery.slice(0, 40)}{message.researchQuery.length > 40 ? '...' : ''}
-          </span>
-        </>
-      )}
-    </div>
-  </div>
-</motion.div>
+          {message.sources && message.sources.length > 0 && (
+            <div style={{ 
+              marginTop: '12px', 
+              paddingTop: '12px', 
+              borderTop: '1px solid rgba(255,255,255,0.08)',
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: '6px' 
+            }}>
+              <span style={{ 
+                fontSize: '11px', 
+                color: '#a3a3a3', 
+                fontWeight: 500 
+              }}>
+                📚 {message.sources.length} fontes acadêmicas
+              </span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                {message.sources.map((source, idx) => (
+                  <a
+                    key={idx}
+                    href={source.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '4px 8px',
+                      background: 'rgba(220,38,38,0.1)',
+                      border: '1px solid rgba(220,38,38,0.2)',
+                      borderRadius: '6px',
+                      fontSize: '11px',
+                      color: '#dc2626',
+                      textDecoration: 'none',
+                      transition: 'all 0.2s',
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = 'rgba(220,38,38,0.2)';
+                      e.currentTarget.style.transform = 'scale(1.05)';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = 'rgba(220,38,38,0.1)';
+                      e.currentTarget.style.transform = 'scale(1)';
+                    }}
+                  >
+                    {sourceIcon(source.type)}
+                    <span style={{ fontWeight: 500 }}>{source.citation}</span>
+                    <ExternalLink size={10} />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ 
+            marginTop: '8px', 
+            fontSize: '10px', 
+            color: '#525252',
+            opacity: 0.7 
+          }}>
+            {message.timestamp.toLocaleTimeString('pt-BR', { 
+              hour: '2-digit', 
+              minute: '2-digit' 
+            })}
+            {message.researchQuery && (
+              <>
+                {' • '}
+                <span style={{ color: '#a3a3a3' }}>
+                  🔍 {message.researchQuery.slice(0, 40)}{message.researchQuery.length > 40 ? '...' : ''}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    ))}
+  </AnimatePresence>
+
+  <div ref={messagesEndRef} />
+</div>
