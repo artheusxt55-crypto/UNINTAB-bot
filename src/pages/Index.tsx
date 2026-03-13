@@ -52,96 +52,28 @@ export default function Index() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const audioAnalyzer = useAudioAnalyzer();
 
+  // --- FUNÇÕES ADICIONADAS (LÓGICA DE PERSISTÊNCIA E PDF) ---
   useEffect(() => {
     const savedId = localStorage.getItem('untbot_last_id');
     if (savedId) setUserId(savedId);
   }, []);
 
-  // --- CONFIGURAÇÃO DA ANIMAÇÃO DE TEXTO ---
-  const sentence = "Como posso ajudar?";
-  const letterVariants = {
-    initial: { opacity: 0 },
-    animate: { opacity: 1 },
-  };
-
-  // --- MOTOR GRÁFICO DE INFOGRÁFICOS (AURA PDF ENGINE V7) ---
   const exportarParaPDF = (texto: string) => {
     const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-
-    const textoLimpo = texto.replace(/[*#`_]/g, '').trim();
-    const linhas = textoLimpo.split('\n').filter(l => l.trim() !== "");
-
-    doc.setFillColor(248, 249, 250);
-    doc.rect(0, 0, pageWidth, pageHeight, 'F');
     doc.setFillColor(227, 6, 19);
-    doc.rect(0, 0, 4, pageHeight, 'F');
-
-    doc.setTextColor(227, 6, 19);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(22);
-    doc.text("MAPA MENTAL NEURAL", 15, 22);
-    
-    doc.setTextColor(120, 120, 120);
+    doc.rect(0, 0, 210, 25, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.text("UNINTA - RELATÓRIO DE SINAPSE NEURAL", 15, 16);
     doc.setFontSize(8);
-    doc.setFont("helvetica", "normal");
-    doc.text(`PROTOCOLO AURA AI | LAB NEURO-UNINTA | OPERADOR: ${userId.toUpperCase() || 'UNTBOT'}`, 15, 29);
-    doc.text(`EMISSÃO: ${new Date().toLocaleDateString()} - ${new Date().toLocaleTimeString()}`, 15, 33);
-
-    let cursorY = 48;
-    const startX = 15;
-
-    linhas.forEach((linha) => {
-      const recuo = linha.search(/\S/); 
-      const textoFinal = linha.trim();
-      
-      if (recuo === 0) {
-        cursorY += 6;
-        doc.setFillColor(227, 6, 19);
-        doc.roundedRect(startX, cursorY - 7, pageWidth - 35, 11, 2, 2, 'F');
-        doc.setTextColor(255, 255, 255);
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(11);
-        doc.text(textoFinal.toUpperCase(), startX + 5, cursorY);
-        cursorY += 14;
-      } else {
-        const indentLevel = Math.min(recuo * 2, 25);
-        const cardWidth = pageWidth - (startX + indentLevel + 30);
-        doc.setDrawColor(200, 200, 200);
-        doc.setLineWidth(0.4);
-        doc.line(startX + 6, cursorY - 12, startX + 6, cursorY - 3);
-        doc.line(startX + 6, cursorY - 3, startX + indentLevel, cursorY - 3);
-        doc.setFillColor(255, 255, 255);
-        doc.setDrawColor(220, 220, 220);
-        const splitTexto = doc.splitTextToSize(textoFinal, cardWidth - 10);
-        const cardHeight = (splitTexto.length * 5) + 6;
-        doc.setFillColor(240, 240, 240);
-        doc.roundedRect(startX + indentLevel + 0.5, cursorY - 8.5, cardWidth, cardHeight, 1.5, 1.5, 'F');
-        doc.setFillColor(255, 255, 255);
-        doc.roundedRect(startX + indentLevel, cursorY - 9, cardWidth, cardHeight, 1.5, 1.5, 'FD');
-        doc.setTextColor(50, 50, 50);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
-        doc.text(splitTexto, startX + indentLevel + 5, cursorY - 3);
-        cursorY += cardHeight + 4;
-      }
-
-      if (cursorY > 275) {
-        doc.addPage();
-        doc.setFillColor(248, 249, 250);
-        doc.rect(0, 0, pageWidth, pageHeight, 'F');
-        doc.setFillColor(227, 6, 19);
-        doc.rect(0, 0, 4, pageHeight, 'F');
-        cursorY = 25;
-      }
-    });
-
-    doc.setFontSize(7);
-    doc.setTextColor(180, 180, 180);
-    doc.text("Documento gerado por Aura AI - Unidade de Inteligência Lab-Neuro", 15, pageHeight - 10);
-    doc.save(`MAPA_AURA_${userId || 'lab'}_${Date.now()}.pdf`);
+    doc.text(`ID: ${userId.toUpperCase()} | DATA: ${new Date().toLocaleDateString()}`, 140, 16);
+    doc.setTextColor(50, 50, 50);
+    doc.setFontSize(11);
+    const splitText = doc.splitTextToSize(texto.replace(/[*#]/g, ''), 180);
+    doc.text(splitText, 15, 40);
+    doc.save(`sinapse_${userId || 'lab'}_${Date.now()}.pdf`);
   };
+  // -------------------------------------------------------
 
   const activeConversation = conversations.find((c) => c.id === activeConvId) || conversations[0];
   const messages = activeConversation.messages;
@@ -175,6 +107,7 @@ export default function Index() {
     if (!input.trim() || isTyping) return;
     const userMsg = input.trim();
 
+    // Lógica de Identificação sem quebrar o fluxo
     if (!userId) {
       setUserId(userMsg.toLowerCase());
       localStorage.setItem('untbot_last_id', userMsg.toLowerCase());
@@ -194,7 +127,7 @@ export default function Index() {
       addMessage("assistant", resposta);
       falarTexto(resposta);
     } catch (error) {
-      addMessage("assistant", "⚠️ Erro na rede neural.");
+      addMessage("assistant", "⚠️ Erro de conexão neural.");
     } finally {
       setIsTyping(false);
     }
@@ -258,9 +191,14 @@ export default function Index() {
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary shadow-[0_0_8px_rgba(var(--primary),0.8)]"></span>
             </div>
             <h1 className="text-xs font-bold font-mono tracking-[0.2em] text-primary uppercase text-glow">
-                UNINTA // AURA V6 // {userId || "IDENTIFIQUE-SE"}
+                UNINTA // {userId || "AGUARDANDO_ID"}
             </h1>
           </div>
+          <button onClick={() => {
+            const id = Date.now().toString();
+            setConversations(prev => [{ id, title: "Nova conversa", messages: [], createdAt: new Date() }, ...prev]);
+            setActiveConvId(id);
+          }} className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground"><Plus size={20} /></button>
         </header>
 
         <main className="flex-1 overflow-y-auto chat-scrollbar relative scroll-smooth px-4 bg-gradient-to-b from-transparent to-black/20">
@@ -269,21 +207,8 @@ export default function Index() {
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-8 opacity-80 scale-90 drop-shadow-2xl">
                 <NeuralOrb isActive={audioAnalyzer.isActive} volume={audioAnalyzer.volume} frequency={audioAnalyzer.frequency} isProcessing={audioAnalyzer.isProcessing} size="md" />
               </motion.div>
-              
-              <motion.h2 
-                className="text-4xl font-light tracking-tight text-white/90"
-                initial="initial"
-                animate="animate"
-                transition={{ staggerChildren: 0.05 }}
-              >
-                {sentence.split("").map((char, index) => (
-                  <motion.span key={index} variants={letterVariants}>
-                    {char}
-                  </motion.span>
-                ))}
-              </motion.h2>
-
-              <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-muted-foreground/40 mt-3 italic">Lab Neuro-UNINTA // Pronta para análise neural</p>
+              <h2 className="text-3xl font-semibold tracking-tight text-white/90">Como posso ajudar?</h2>
+              <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-muted-foreground/40 mt-3 italic">Lab Neuro-UNINTA // Assistant Online</p>
             </div>
           ) : (
             <div className="max-w-3xl mx-auto w-full py-10 space-y-8">
@@ -298,12 +223,13 @@ export default function Index() {
                     <div className={`p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed backdrop-blur-md border shadow-2xl ${msg.role === "user" ? "bg-primary/90 text-primary-foreground border-primary/20" : "bg-white/5 border-white/10 text-white/90"}`}>
                       <ReactMarkdown className="prose prose-invert prose-sm max-w-none">{msg.content}</ReactMarkdown>
                       
+                      {/* BOTÃO PDF INTEGRADO SEM QUEBRAR O LAYOUT */}
                       {msg.role === 'assistant' && (
                         <button 
                           onClick={() => exportarParaPDF(msg.content)} 
-                          className="mt-4 flex items-center gap-2 text-[10px] bg-white/5 hover:bg-primary/30 p-2.5 rounded-lg border border-white/10 transition-all uppercase font-bold tracking-tighter shadow-inner"
+                          className="mt-3 flex items-center gap-2 text-[10px] bg-white/5 hover:bg-primary/20 p-2 rounded border border-white/10 transition-all uppercase font-bold tracking-tighter"
                         >
-                          <FileText size={12} className="text-primary" /> Gerar Mapa Infográfico
+                          <FileText size={12} /> Gerar Relatório PDF
                         </button>
                       )}
                     </div>
@@ -317,7 +243,7 @@ export default function Index() {
         </main>
 
         <footer className="p-6 bg-gradient-to-t from-background to-transparent relative">
-          <div className="max-w-3xl mx-auto relative">
+          <div className="max-w-3xl mx-auto relative h-auto">
             <div className="relative z-10 flex items-end gap-2 bg-black/80 border border-white/10 rounded-[1.5rem] p-2.5 transition-all duration-300 backdrop-blur-[40px] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
               <button onClick={toggleVoice} className={`p-2.5 rounded-xl transition-all ${audioAnalyzer.isActive ? "bg-primary text-primary-foreground shadow-[0_0_15px_rgba(var(--primary),0.5)]" : "text-muted-foreground hover:bg-white/5"}`}>
                 {audioAnalyzer.isActive ? <MicOff size={18} /> : <Mic size={18} />}
@@ -328,17 +254,19 @@ export default function Index() {
                 value={input} 
                 onChange={(e) => setInput(e.target.value)} 
                 onKeyDown={handleKeyDown} 
-                placeholder={userId ? "Injete um comando neural..." : "Digite o seu nome de operador..."} 
+                placeholder={userId ? "Injete um comando..." : "Digite seu nome para iniciar..."} 
                 rows={1} 
                 autoComplete="off"
                 spellCheck="false"
-                className="flex-1 bg-transparent border-0 focus:border-0 focus:ring-0 focus:outline-none resize-none text-sm py-2.5 placeholder:text-muted-foreground/30 font-sans chat-scrollbar overflow-y-auto text-white" 
+                style={{ border: 'none', boxShadow: 'none', outline: 'none', background: 'transparent' }}
+                className="flex-1 bg-transparent border-0 focus:border-0 focus:ring-0 focus:outline-none resize-none text-sm py-2.5 placeholder:text-muted-foreground/30 font-sans chat-scrollbar overflow-y-auto shadow-none outline-none appearance-none text-white selection:bg-primary/40" 
               />
               
-              <button onClick={handleSend} disabled={!input.trim() || isTyping} className="p-2.5 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 shadow-lg active:scale-95 transition-all group">
+              <button onClick={handleSend} disabled={!input.trim() || isTyping} className="p-2.5 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 shadow-lg active:scale-95 transition-all group hover:shadow-[0_0_20px_rgba(var(--primary),0.4)]">
                 {isTyping ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} className="group-hover:translate-x-0.5 transition-transform" />}
               </button>
             </div>
+            <p className="text-center text-[8px] text-muted-foreground/20 mt-4 font-mono uppercase tracking-[0.5em] animate-pulse">Neural Lab // Protocol 6.0</p>
           </div>
         </footer>
       </div>
