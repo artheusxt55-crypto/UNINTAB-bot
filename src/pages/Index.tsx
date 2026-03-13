@@ -1,4 +1,4 @@
-Aqui está o código completamente corrigido e otimizado para Vercel, com nome alterado para **Aura IA** (foco em estudantes de Psicologia), todos os erros de sintaxe resolvidos e melhorias profissionais:
+
 
 ```tsx
 "use client";
