@@ -1,5 +1,3 @@
-
-```tsx
 import { useState, useRef, useEffect, KeyboardEvent, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -381,14 +379,6 @@ const fetchScielo = async (query: string, searchCache: Map<string, Source[]>, se
       type: 'scielo' as const,
       title: `Artigo SciELO: "${query}"`,
       url: `https://search.scielo.org/?q=${encodeURIComponent(query)}`,
-      snippet: `Artigo científico brasileiro
-          const cacheKey = `scielo_${query}`;
-    if (searchCache.has(cacheKey)) return searchCache.get(cacheKey)!;
-    
-    const results: Source[] = [{
-      type: 'scielo' as const,
-      title: `Artigo SciELO: "${query}"`,
-      url: `https://search.scielo.org/?q=${encodeURIComponent(query)}`,
       snippet: `Artigo científico brasileiro sobre "${query}". Plataforma SciELO Brasil com milhares de estudos acadêmicos.`,
       citation: '[1]',
       reliability: 'high' as const
@@ -396,6 +386,12 @@ const fetchScielo = async (query: string, searchCache: Map<string, Source[]>, se
     
     setSearchCache(prev => new Map(prev).set(cacheKey, results));
     return results;
+  } catch (error) {
+    console.error('SciELO error:', error);
+    return
+    tsx
+
+Copy code
   } catch (error) {
     console.error('SciELO error:', error);
     return [];
@@ -427,7 +423,7 @@ const fetchArxiv = async (query: string, searchCache: Map<string, Source[]>, set
     const results: Source[] = [{
       type: 'arxiv' as const,
       title: `Arxiv: "${query}"`,
-      url: `https://arxiv.org/search/?query=${encodeURIComponent(query)}`,
+      url: `https://arxiv.org/search/?query=${encodeURIComponent(query)}&searchtype=all&source=header`,
       snippet: 'Preprints científicos de física, matemática, IA e mais.',
       citation: '[1]',
       reliability: 'high' as const
@@ -533,7 +529,7 @@ export default function Index() {
     }
   }, [input]);
 
-  // PDF Export (CORRIGIDO - Sem emojis em template literals)
+  // PDF Export
   const exportarParaPDF = (messages: Message[]) => {
     if (!messages.length) return;
     
@@ -617,7 +613,7 @@ export default function Index() {
     }));
   };
 
-  // HANDLE SEND COM FUNÇÕES REAIS (CORRIGIDO - Removida vírgula extra)
+  // HANDLE SEND
   const handleSend = async () => {
     if (!input.trim() || isTyping) return;
     
@@ -806,19 +802,15 @@ SUGESTÕES UNINTA:
                 fontSize: '12px',
                 cursor: 'pointer',
               }}
-                          >
+            >
               PDF
             </button>
           </div>
         </header>
 
-        {/* Messages - CORRIGIDO: Estrutura JSX completa */}
+        {/* Messages */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <AnimatePresence>
-            {isResearching && researchQuery && (
-              <ResearchStatus isResearching={true} query={researchQuery} sourcesCount={0} />
-            )}
-            
             {messages.map((message) => (
               <motion.div
                 key={message.id}
@@ -832,6 +824,10 @@ SUGESTÕES UNINTA:
               >
                 <div style={{
                   padding: '12px 16px',
+                  borderRadius:
+                    tsx
+
+Copy code
                   borderRadius: '16px',
                   background: message.role === 'user' 
                     ? 'linear-gradient(135deg, rgba(220,38,38,0.15) 0%, rgba(127,29,29,0.2) 100%)'
@@ -942,15 +938,17 @@ SUGESTÕES UNINTA:
             ))}
             
             {/* Typing Indicator */}
-            {isTyping && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-              >
-                <TypingIndicator />
-              </motion.div>
-            )}
+            <AnimatePresence>
+              {isTyping && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                >
+                  <TypingIndicator />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </AnimatePresence>
 
           <div ref={messagesEndRef} />
@@ -1040,14 +1038,14 @@ SUGESTÕES UNINTA:
               }}
             >
               {isTyping ? (
-                <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
+                <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', color: 'white' }} />
               ) : (
                 <Send size={18} />
               )}
             </button>
           </div>
 
-          {isResearching && (
+          {isResearching && researchQuery && (
             <ResearchStatus 
               isResearching={true} 
               query={researchQuery} 
