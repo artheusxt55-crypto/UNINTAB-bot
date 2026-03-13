@@ -57,74 +57,104 @@ export default function Index() {
     if (savedId) setUserId(savedId);
   }, []);
 
-  // --- MODELO MANEIRO: EXPORTAR PARA PDF PROFISSIONAL ---
+  // --- MOTOR GRÁFICO DE INFOGRÁFICOS (AURA PDF ENGINE V7) ---
   const exportarParaPDF = (texto: string) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
 
-    // 1. LIMPEZA DE SÍMBOLOS (Remove asteriscos e lixo de MD)
+    // 1. Limpeza de formatação Markdown
     const textoLimpo = texto.replace(/[*#`_]/g, '').trim();
     const linhas = textoLimpo.split('\n').filter(l => l.trim() !== "");
 
-    // 2. DESIGN DO CABEÇALHO (Estilo UNINTA)
-    doc.setFillColor(227, 6, 19); // Vermelho Institucional
-    doc.rect(0, 0, 6, pageHeight, 'F'); // Barra lateral
+    // 2. Estilização de Fundo e Margens
+    doc.setFillColor(248, 249, 250); // Fundo cinza claríssimo
+    doc.rect(0, 0, pageWidth, pageHeight, 'F');
+    doc.setFillColor(227, 6, 19); // Barra lateral UNINTA
+    doc.rect(0, 0, 4, pageHeight, 'F');
 
-    doc.setFillColor(245, 245, 245);
-    doc.rect(6, 0, pageWidth - 6, 40, 'F');
-    
+    // Cabeçalho Profissional
     doc.setTextColor(227, 6, 19);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(22);
-    doc.text("MAPA MENTAL NEURAL", 15, 20);
+    doc.text("MAPA MENTAL NEURAL", 15, 22);
     
-    doc.setTextColor(80, 80, 80);
-    doc.setFontSize(9);
+    doc.setTextColor(120, 120, 120);
+    doc.setFontSize(8);
     doc.setFont("helvetica", "normal");
-    doc.text("CENTRO UNIVERSITÁRIO INTA - UNINTA | LAB NEURO", 15, 28);
-    doc.text(`OPERADOR: ${userId.toUpperCase() || 'LAB_ASSISTANT'} | EMISSÃO: ${new Date().toLocaleDateString()}`, 15, 34);
+    doc.text(`PROTOCOLO AURA AI | LAB NEURO-UNINTA | OPERADOR: ${userId.toUpperCase() || 'UNTBOT'}`, 15, 29);
+    doc.text(`EMISSÃO: ${new Date().toLocaleDateString()} - ${new Date().toLocaleTimeString()}`, 15, 33);
 
-    // 3. RENDERIZAÇÃO DOS BLOCOS TÉCNICOS
-    let cursorY = 55;
+    let cursorY = 48;
+    const startX = 15;
 
     linhas.forEach((linha) => {
-      const eTopico = !linha.startsWith("    ") && !linha.startsWith("  ");
+      // Identifica o nível de hierarquia pelo recuo (espaços à esquerda)
+      const recuo = linha.search(/\S/); 
+      const textoFinal = linha.trim();
       
-      if (eTopico) {
-        doc.setFillColor(227, 6, 19);
-        doc.roundedRect(12, cursorY - 5, 3, 10, 1, 1, 'F');
-        doc.setTextColor(30, 30, 30);
+      if (recuo === 0) {
+        // TÓPICO PRINCIPAL (BALÃO DESTAQUE)
+        cursorY += 6;
+        doc.setFillColor(227, 6, 19); // Vermelho
+        doc.roundedRect(startX, cursorY - 7, pageWidth - 35, 11, 2, 2, 'F');
+        
+        doc.setTextColor(255, 255, 255);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11);
-        doc.text(linha.toUpperCase().trim(), 18, cursorY + 2);
-        doc.setDrawColor(230, 230, 230);
-        doc.line(18, cursorY + 5, pageWidth - 15, cursorY + 5);
-        cursorY += 15;
+        doc.text(textoFinal.toUpperCase(), startX + 5, cursorY);
+        cursorY += 14;
       } else {
-        doc.setTextColor(70, 70, 70);
-        doc.setFont("courier", "normal"); 
+        // SUB-TÓPICOS COM SETAS E CARDS (ESTILO INFOGRÁFICO)
+        const indentLevel = Math.min(recuo * 2, 25);
+        const cardWidth = pageWidth - (startX + indentLevel + 30);
+        
+        // Desenha a Seta (Linha Conectora Orgânica)
+        doc.setDrawColor(200, 200, 200);
+        doc.setLineWidth(0.4);
+        doc.line(startX + 6, cursorY - 12, startX + 6, cursorY - 3); // Vertical
+        doc.line(startX + 6, cursorY - 3, startX + indentLevel, cursorY - 3); // Horizontal
+        
+        // Desenha o Card do Conteúdo
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(220, 220, 220);
+        
+        const splitTexto = doc.splitTextToSize(textoFinal, cardWidth - 10);
+        const cardHeight = (splitTexto.length * 5) + 6;
+        
+        // Sombra leve para o card
+        doc.setFillColor(240, 240, 240);
+        doc.roundedRect(startX + indentLevel + 0.5, cursorY - 8.5, cardWidth, cardHeight, 1.5, 1.5, 'F');
+        
+        // Card Principal
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(startX + indentLevel, cursorY - 9, cardWidth, cardHeight, 1.5, 1.5, 'FD');
+        
+        doc.setTextColor(50, 50, 50);
+        doc.setFont("helvetica", "normal");
         doc.setFontSize(10);
-        const textoRamo = linha.trim();
-        const splitInfo = doc.splitTextToSize(`> ${textoRamo}`, 175);
-        doc.text(splitInfo, 22, cursorY);
-        cursorY += (splitInfo.length * 6) + 2;
+        doc.text(splitTexto, startX + indentLevel + 5, cursorY - 3);
+        
+        cursorY += cardHeight + 4;
       }
 
+      // Quebra de página automática
       if (cursorY > 275) {
         doc.addPage();
+        doc.setFillColor(248, 249, 250);
+        doc.rect(0, 0, pageWidth, pageHeight, 'F');
         doc.setFillColor(227, 6, 19);
-        doc.rect(0, 0, 6, pageHeight, 'F');
+        doc.rect(0, 0, 4, pageHeight, 'F');
         cursorY = 25;
       }
     });
 
-    doc.setFont("helvetica", "italic");
+    // Rodapé de Segurança
     doc.setFontSize(7);
     doc.setTextColor(180, 180, 180);
-    doc.text("Aura AI V6 - Protocolo de Inteligência Lab-Neuro", 15, pageHeight - 10);
+    doc.text("Documento gerado por Aura AI - Unidade de Inteligência Lab-Neuro", 15, pageHeight - 10);
 
-    doc.save(`MAPA_NEURAL_${userId || 'lab'}_${Date.now()}.pdf`);
+    doc.save(`MAPA_AURA_${userId || 'lab'}_${Date.now()}.pdf`);
   };
 
   const activeConversation = conversations.find((c) => c.id === activeConvId) || conversations[0];
@@ -178,7 +208,7 @@ export default function Index() {
       addMessage("assistant", resposta);
       falarTexto(resposta);
     } catch (error) {
-      addMessage("assistant", "⚠️ Erro de conexão neural.");
+      addMessage("assistant", "⚠️ Erro na rede neural.");
     } finally {
       setIsTyping(false);
     }
@@ -242,14 +272,9 @@ export default function Index() {
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary shadow-[0_0_8px_rgba(var(--primary),0.8)]"></span>
             </div>
             <h1 className="text-xs font-bold font-mono tracking-[0.2em] text-primary uppercase text-glow">
-                UNINTA // {userId || "AGUARDANDO_ID"}
+                UNINTA // AURA V6 // {userId || "IDENTIFIQUE-SE"}
             </h1>
           </div>
-          <button onClick={() => {
-            const id = Date.now().toString();
-            setConversations(prev => [{ id, title: "Nova conversa", messages: [], createdAt: new Date() }, ...prev]);
-            setActiveConvId(id);
-          }} className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground"><Plus size={20} /></button>
         </header>
 
         <main className="flex-1 overflow-y-auto chat-scrollbar relative scroll-smooth px-4 bg-gradient-to-b from-transparent to-black/20">
@@ -258,8 +283,8 @@ export default function Index() {
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-8 opacity-80 scale-90 drop-shadow-2xl">
                 <NeuralOrb isActive={audioAnalyzer.isActive} volume={audioAnalyzer.volume} frequency={audioAnalyzer.frequency} isProcessing={audioAnalyzer.isProcessing} size="md" />
               </motion.div>
-              <h2 className="text-3xl font-semibold tracking-tight text-white/90">Como posso ajudar?</h2>
-              <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-muted-foreground/40 mt-3 italic">Lab Neuro-UNINTA // Operador: {userId || 'Untbot'}</p>
+              <h2 className="text-3xl font-semibold tracking-tight text-white/90">Aura Online</h2>
+              <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-muted-foreground/40 mt-3 italic">Lab Neuro-UNINTA // Pronta para análise neural</p>
             </div>
           ) : (
             <div className="max-w-3xl mx-auto w-full py-10 space-y-8">
@@ -277,9 +302,9 @@ export default function Index() {
                       {msg.role === 'assistant' && (
                         <button 
                           onClick={() => exportarParaPDF(msg.content)} 
-                          className="mt-3 flex items-center gap-2 text-[10px] bg-white/5 hover:bg-primary/30 p-2 rounded border border-white/10 transition-all uppercase font-bold tracking-tighter"
+                          className="mt-4 flex items-center gap-2 text-[10px] bg-white/5 hover:bg-primary/30 p-2.5 rounded-lg border border-white/10 transition-all uppercase font-bold tracking-tighter shadow-inner"
                         >
-                          <FileText size={12} /> Gerar Laudo PDF
+                          <FileText size={12} className="text-primary" /> Gerar Mapa Infográfico
                         </button>
                       )}
                     </div>
@@ -293,7 +318,7 @@ export default function Index() {
         </main>
 
         <footer className="p-6 bg-gradient-to-t from-background to-transparent relative">
-          <div className="max-w-3xl mx-auto relative h-auto">
+          <div className="max-w-3xl mx-auto relative">
             <div className="relative z-10 flex items-end gap-2 bg-black/80 border border-white/10 rounded-[1.5rem] p-2.5 transition-all duration-300 backdrop-blur-[40px] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
               <button onClick={toggleVoice} className={`p-2.5 rounded-xl transition-all ${audioAnalyzer.isActive ? "bg-primary text-primary-foreground shadow-[0_0_15px_rgba(var(--primary),0.5)]" : "text-muted-foreground hover:bg-white/5"}`}>
                 {audioAnalyzer.isActive ? <MicOff size={18} /> : <Mic size={18} />}
@@ -304,14 +329,14 @@ export default function Index() {
                 value={input} 
                 onChange={(e) => setInput(e.target.value)} 
                 onKeyDown={handleKeyDown} 
-                placeholder={userId ? "Injete um comando..." : "Identifique-se para iniciar..."} 
+                placeholder={userId ? "Injete um comando neural..." : "Digite o seu nome de operador..."} 
                 rows={1} 
                 autoComplete="off"
                 spellCheck="false"
-                className="flex-1 bg-transparent border-0 focus:border-0 focus:ring-0 focus:outline-none resize-none text-sm py-2.5 placeholder:text-muted-foreground/30 font-sans chat-scrollbar overflow-y-auto text-white shadow-none" 
+                className="flex-1 bg-transparent border-0 focus:border-0 focus:ring-0 focus:outline-none resize-none text-sm py-2.5 placeholder:text-muted-foreground/30 font-sans chat-scrollbar overflow-y-auto text-white" 
               />
               
-              <button onClick={handleSend} disabled={!input.trim() || isTyping} className="p-2.5 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 shadow-lg active:scale-95 transition-all group hover:shadow-[0_0_20px_rgba(var(--primary),0.4)]">
+              <button onClick={handleSend} disabled={!input.trim() || isTyping} className="p-2.5 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 shadow-lg active:scale-95 transition-all group">
                 {isTyping ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} className="group-hover:translate-x-0.5 transition-transform" />}
               </button>
             </div>
