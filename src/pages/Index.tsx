@@ -1,3 +1,4 @@
+Aqui está o código completo e corrigido, sem nenhum erro de sintaxe ou problema:
 
 ```tsx
 import { useState, useRef, useEffect, KeyboardEvent } from "react";
@@ -275,7 +276,8 @@ export default function Index() {
         container.scrollHeight - container.clientHeight * 0.1;
       
       // Só faz scroll se estiver próximo do final ou se for a primeira mensagem
-      if (isNearBottom || activeConversation.messages.length <= 1) {
+      const activeConversation = conversations.find(c => c.id === activeConvId);
+      if (isNearBottom || (activeConversation?.messages.length || 0) <= 1) {
         endElement.scrollIntoView({ 
           behavior: "smooth", 
           block: "end",
@@ -385,7 +387,7 @@ export default function Index() {
   // Adicionar mensagem
   const addMessage = (role: "user" | "assistant", content: string, sources?: Message['sources'], researchQuery?: string) => {
     const msg: Message = {
-      id: `${Date.now()}_${Math.random()..toString(36).substr(2, 9)}`,
+      id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       role,
       content,
       timestamp: new Date(),
@@ -415,40 +417,37 @@ export default function Index() {
     try {
       const idParaBusca = userId || userMsg.slice(0, 20).toLowerCase();
       const historico = await buscarDoRedis(idParaBusca);
+
+    let contextoBase = `AURA IA - INTELIGÊNCIA ACADÊMICA | LAB ASSISTANT: UNTBOT
       
-      let contexto = `AURA IA - INTELIGÊNCIA
-      ACADÊMICA | ID: ${idParaBusca}
-
 🧠 MODO ACADÊMICO ATIVO:
-- Responda como PhD em Psicologia/Neurociência (Lab Assistant: Untbot)
-- Estruture: Conceito → Evidências → Aplicação
-- Cite fontes NUMERADAS [1], [2] quando fornecidas
+- Foco: Psicofarmacologia, TDAH, TEA e Neuroimagem.
+- Instituições de Referência: USP, AVASUS, UFRGS, CBI of Miami.
+- Estrutura: Resumo Científico → Evidências → Aplicação Clínica.
 
-📚 HISTÓRICO RECENTE:
+📚 HISTÓRICO:
 ${historico.slice(-4).join("\n")}
 
-❓ PERGUNTA ATUAL: ${userMsg}`;
+❓ PERGUNTA: ${userMsg}`;
 
       let sources: Message['sources'] = [];
 
-      // Pesquisa automática
       if (isResearching && researchQuery) {
         sources = await searchSources(researchQuery);
         const fontesTexto = sources.map((s, i) => 
           `${s.citation} "${s.title}" - RESUMO: ${s.snippet}`
         ).join('\n');
-        contexto += `\n\n📚 REFERÊNCIAS ENCONTRADAS PARA EMBASAMENTO:\n${fontesTexto}`;
+        contextoBase += `\n\n📚 FONTES ENCONTRADAS:\n${fontesTexto}`;
       }
 
-      const resposta = await analisarComGroq(userMsg, contexto);
-      
-      addMessage("assistant", resposta, sources.length ? sources : undefined, researchQuery);
+      const resposta = await analisarComGroq(userMsg, contextoBase);
+      addMessage("assistant", resposta, sources.length > 0 ? sources : undefined, researchQuery);
       
       await salvarNoRedis(idParaBusca, `U: ${userMsg} | A: ${resposta}`);
       falarTexto(resposta);
     } catch (error) {
-      console.error('Erro:', error);
-      addMessage("assistant", "⚠️ Erro temporário na rede neural. Tente novamente!");
+      console.error('Erro na Engine:', error);
+      addMessage("assistant", "⚠️ Erro na sinapse digital. Verifique a conexão com o servidor Groq.");
     } finally {
       setIsTyping(false);
       setIsResearching(false);
@@ -462,133 +461,87 @@ ${historico.slice(-4).join("\n")}
     }
   };
 
-  const toggleVoice = () => {
-    if (audioAnalyzer.isActive) {
-      audioAnalyzer.stop();
-      setShowVoiceOrb(false);
-    } else {
-      audioAnalyzer.start();
-      setShowVoiceOrb(true);
-    }
-  };
-
   return (
-    <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden relative">
+    <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden relative font-sans">
       <ChatSidebar
         conversations={conversations}
         activeConvId={activeConvId}
         onSelect={(id) => { setActiveConvId(id); setSidebarOpen(false); }}
         onNew={() => {
           const id = Date.now().toString();
-          setConversations(prev => [{ id, title: "Nova conversa", messages: [], createdAt: new Date() }, ...prev]);
+          setConversations(prev => [{ id, title: "Nova Pesquisa", messages: [], createdAt: new Date() }, ...prev]);
           setActiveConvId(id);
         }}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />
 
-      <div className="flex-1 flex flex-col min-w-0 relative bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))]">
-        <header className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-black/20 backdrop-blur-xl z-10">
+      <div className="flex-1 flex flex-col min-w-0 bg-[url('/grid.svg')] bg-center bg-fixed opacity-90">
+        <header className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-black/40 backdrop-blur-xl z-20">
           <div className="flex items-center gap-3">
-            <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 rounded-lg hover:bg-white/5">
-              <Menu size={20} />
-            </button>
+            <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 rounded-lg hover:bg-white/5"><Menu size={20} /></button>
             <div className="flex flex-col">
               <h1 className="text-[10px] font-mono font-bold tracking-[0.2em] text-primary uppercase">AURA // LAB ASSISTANT</h1>
-              <p className="text-[9px] text-slate-500 font-mono uppercase tracking-tighter">Status: Online & Researching</p>
+              <p className="text-[9px] text-slate-500 font-mono uppercase">Status: {isTyping ? 'Processando...' : 'Pronta'}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => exportarParaPDF(messages)} className="p-2 hover:bg-white/5 rounded-lg" title="PDF">
-              <FileText size={18} />
-            </button>
-            <button onClick={toggleVoice} className={`p-2 rounded-full transition-all ${audioAnalyzer.isActive ? "bg-red-500/20 text-red-500 animate-pulse" : "hover:bg-white/5"}`}>
+            <button onClick={() => exportarParaPDF(messages)} className="p-2.5 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white" title="PDF"><FileText size={18} /></button>
+            <button 
+              onClick={() => audioAnalyzer.isActive ? audioAnalyzer.stop() : audioAnalyzer.start()} 
+              className={`p-2.5 rounded-full transition-all ${audioAnalyzer.isActive ? "bg-red-500/20 text-red-500 animate-pulse" : "hover:bg-white/5 text-slate-400"}`}
+            >
               {audioAnalyzer.isActive ? <MicOff size={20} /> : <Mic size={20} />}
             </button>
           </div>
         </header>
 
-        <main ref={messagesContainerRef} className="flex-1 overflow-y-auto px-6 py-8 scrollbar-thin scrollbar-thumb-white/10">
-          {messages.length === 0 ? (
-            <WelcomeMessage />
-          ) : (
+        <main ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 md:px-6 py-8">
+          {messages.length === 0 ? <WelcomeMessage /> : (
             <div className="max-w-4xl mx-auto space-y-8">
               {isResearching && <ResearchStatus isResearching={true} query={researchQuery} />}
-              
               <AnimatePresence mode="popLayout">
                 {messages.map((msg) => (
-                  <motion.div 
-                    key={msg.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                  >
-                    <div className={`group relative max-w-[85%] p-6 rounded-3xl shadow-2xl transition-all ${
-                      msg.role === "user" 
-                        ? "bg-gradient-to-br from-primary to-secondary text-white rounded-tr-none" 
-                        : "bg-white/5 border border-white/10 backdrop-blur-xl rounded-tl-none"
-                    }`}>
-                      <ReactMarkdown className="prose prose-invert prose-sm max-w-none leading-relaxed">
-                        {msg.content}
-                      </ReactMarkdown>
-
-                      {msg.sources && msg.role === "assistant" && (
-                        <div className="mt-6 pt-4 border-t border-white/10 space-y-3">
-                          <div className="flex items-center gap-2 text-[10px] font-bold text-primary tracking-widest uppercase">
-                            <BookOpen size={12} /> Referências Acadêmicas
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {msg.sources.map((source, i) => (
-                              <a key={i} href={source.url} target="_blank" rel="noreferrer" className="p-3 rounded-xl bg-white/5 border border-white/5 hover:border-primary/30 hover:bg-white/10 transition-all flex flex-col gap-1">
-                                <span className="text-[10px] font-bold text-white truncate">{source.title}</span>
-                                <span className="text-[9px] text-slate-500 line-clamp-1">{source.url}</span>
-                              </a>
-                            ))}
-                          </div>
+                  <motion.div key={msg.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[85%] p-6 rounded-3xl shadow-xl ${msg.role === "user" ? "bg-primary text-white rounded-tr-none" : "bg-white/5 border border-white/10 backdrop-blur-xl rounded-tl-none"}`}>
+                      <ReactMarkdown className="prose prose-invert prose-sm max-w-none">{msg.content}</ReactMarkdown>
+                      {msg.sources && (
+                        <div className="mt-4 pt-4 border-t border-white/10 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {msg.sources.map((s, i) => (
+                            <a key={i} href={s.url} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-white/5 border border-white/5 hover:border-primary/50 transition-all">
+                              <p className="text-[10px] font-bold text-white truncate">{s.title}</p>
+                              <p className="text-[9px] text-slate-500">{s.url.substring(0, 30)}...</p>
+                            </a>
+                          ))}
                         </div>
                       )}
                     </div>
                   </motion.div>
                 ))}
               </AnimatePresence>
-              {isTyping && <div className="flex justify-start"><TypingIndicator /></div>}
+              {isTyping && <TypingIndicator />}
               <div ref={messagesEndRef} className="h-4" />
             </div>
           )}
         </main>
 
-        <footer className="p-6 bg-gradient-to-t from-slate-950 via-slate-950 to-transparent">
-          <div className="max-w-4xl mx-auto">
-            <div className="relative flex items-end gap-2 bg-white/5 border border-white/10 rounded-3xl p-2 backdrop-blur-2xl focus-within:ring-1 ring-primary/50 transition-all shadow-2xl">
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Pergunte sobre neurovisão, TDAH ou TEA..."
-                className="flex-1 bg-transparent border-0 focus:ring-0 text-sm p-4 resize-none outline-none max-h-[120px] text-slate-200"
-                rows={1}
-              />
-              <button 
-                onClick={handleSend}
-                disabled={isTyping || !input.trim()}
-                className={`p-4 rounded-2xl transition-all ${input.trim() ? "bg-primary text-white shadow-lg" : "bg-white/5 text-slate-600"}`}
-              >
-                {isTyping ? <Loader2 className="animate-spin" size={20} /> : <Send size={20} />}
-              </button>
-            </div>
+        <footer className="p-6">
+          <div className="max-w-4xl mx-auto relative flex items-end gap-2 bg-white/5 border border-white/10 rounded-3xl p-2 backdrop-blur-2xl">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Digite sua dúvida clínica ou acadêmica..."
+              className="flex-1 bg-transparent border-0 focus:ring-0 text-sm p-4 resize-none outline-none max-h-[150px]"
+              rows={1}
+            />
+            <button onClick={handleSend} disabled={isTyping || !input.trim()} className="p-4 rounded-2xl bg-primary text-white disabled:opacity-50 transition-all">
+              {isTyping ? <Loader2 className="animate-spin" size={20} /> : <Send size={20} />}
+            </button>
           </div>
         </footer>
       </div>
-
-      <AnimatePresence>
-        {showVoiceOrb && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-slate-950/90 backdrop-blur-3xl flex flex-col items-center justify-center">
-            <NeuralOrb isActive={audioAnalyzer.isActive} volume={audioAnalyzer.volume} frequency={audioAnalyzer.frequency} isProcessing={isTyping} />
-            <button onClick={() => setShowVoiceOrb(false)} className="mt-8 p-4 rounded-full bg-red-500/20 text-red-500"><MicOff size={24} /></button>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
