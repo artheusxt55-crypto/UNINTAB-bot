@@ -1,10 +1,8 @@
-
-```tsx
-"use client"; // ✅ Adicionado para Next.js App Router
+"use client";
 
 import { useState, useRef, useEffect, KeyboardEvent, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Mic, MicOff, Plus, Menu, Loader2, Zap, FileText, Search, BookOpen, Globe, User, Bot, Clock, Copy, Download, X } from "lucide-react";
+import { Send, Mic, MicOff, Plus, Menu, Loader2, Search, User, Bot, Clock, Copy, Download } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import NeuralOrb from "@/components/NeuralOrb";
@@ -110,7 +108,6 @@ function MessageActions({ content, sources, onExport }: {
 }
 
 export default function Index() {
-  // ✅ Estados otimizados com useCallback onde necessário
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState("1");
   const [input, setInput] = useState("");
@@ -138,9 +135,9 @@ export default function Index() {
       setConversations([defaultConv]);
       setActiveConvId("1");
     }
-  }, []);
+  }, [conversations.length]);
 
-  // ✅ IA INTELIGENTE otimizada com useCallback
+  // ✅ IA INTELIGENTE
   const updateResearchMode = useCallback((inputValue: string) => {
     const lowerInput = inputValue.toLowerCase().trim();
     
@@ -168,15 +165,15 @@ export default function Index() {
     updateResearchMode(input);
   }, [input, updateResearchMode]);
 
-  // ✅ Cache cleanup melhorado
+  // ✅ Cache cleanup
   useEffect(() => {
     const interval = setInterval(() => {
       setSearchCache(new Map());
-    }, 10 * 60 * 1000); // 10 minutos
+    }, 10 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // ✅ Carregar userId do localStorage
+  // ✅ Carregar userId do localStorage ✅ CORRIGIDO
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const savedId = localStorage.getItem('psicoai_last_id');
@@ -196,7 +193,7 @@ export default function Index() {
     return () => clearTimeout(timeoutId);
   }, [input, userId]);
 
-  // ✅ APIs com cache e error handling melhorados
+  // ✅ APIs com cache
   const fetchWikipedia = useCallback(async (query: string): Promise<any[]> => {
     try {
       const cacheKey = `wiki_${query}`;
@@ -205,10 +202,7 @@ export default function Index() {
       
       const response = await fetch(
         `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=5&srprop=snippet&origin=*`,
-        { 
-          cache: 'force-cache',
-          next: { revalidate: 3600 } // 1 hora
-        }
+        { cache: 'force-cache' }
       );
       
       if (!response.ok) throw new Error('Wikipedia API falhou');
@@ -238,10 +232,7 @@ export default function Index() {
       
       const response = await fetch(
         `http://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&start=0&max_results=5&sortBy=relevance&sortOrder=descending`,
-        { 
-          cache: 'force-cache',
-          next: { revalidate: 3600 }
-        }
+        { cache: 'force-cache' }
       );
       
       if (!response.ok) throw new Error('ArXiv API falhou');
@@ -279,7 +270,7 @@ export default function Index() {
     return [...wiki, ...arxiv].slice(0, 5);
   }, [fetchWikipedia, fetchArxiv]);
 
-  // ✅ PDF Export melhorado
+  // ✅ PDF Export
   const exportarParaPDF = useCallback((texto: string, sources?: Message['sources']) => {
     try {
       const doc = new jsPDF();
@@ -337,15 +328,16 @@ export default function Index() {
     }
   }, [userId]);
 
-  const activeConversation = conversations.find((c) => c.id === activeConvId) || conversations[0];
-  const messages = activeConversation?.messages || [];
+  // ✅ Active conversation seguro ✅ CORRIGIDO
+  const activeConversation = conversations.find((c) => c.id === activeConvId) || 
+    conversations[0] || 
+    { id: "1", title: "Nova conversa", messages: [], createdAt: new Date() };
+  const messages = activeConversation.messages || [];
 
-  // ✅ Scroll suave otimizado
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  // ✅ Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -353,7 +345,7 @@ export default function Index() {
     }
   }, [input]);
 
-  // ✅ Função addMessage otimizada
+  // ✅ Funções principais
   const addMessage = useCallback((
     role: "user" | "assistant", 
     content: string, 
@@ -381,7 +373,7 @@ export default function Index() {
     );
   }, [activeConvId]);
 
-  // ✅ handleSend completamente corrigido
+  // ✅ handleSend corrigido ✅
   const handleSend = useCallback(async () => {
     if (!input.trim() || isTyping) return;
     
@@ -423,7 +415,7 @@ export default function Index() {
 
       const resposta = await analisarComGroq(userMsg, contexto);
       
-      // ✅ CORRIGIDO: Remove mensagem de pesquisa e adiciona resposta final
+      // Remove mensagem de pesquisa e adiciona resposta final
       setConversations(prev => 
         prev.map(c => {
           if (c.id !== activeConvId) return c;
@@ -437,7 +429,7 @@ export default function Index() {
               role: 'assistant' as const,
               content: resposta,
               timestamp: new Date(),
-              sources: sources.length > 0 ? sources : undefined, // ✅ CORRIGIDO
+              sources: sources.length > 0 ? sources : undefined,
               isResearch: needsResearch
             }]
           };
@@ -454,7 +446,10 @@ export default function Index() {
       setIsTyping(false);
       setNeedsResearch(false);
     }
-  }, [input, isTyping, userId, needsResearch, researchQuery, activeConvId, addMessage, searchSources]);
+  }, [
+    input, isTyping, userId, needsResearch, researchQuery, activeConvId, 
+    addMessage, searchSources, buscarDoRedis, analisarComGroq, salvarNoRedis, falarTexto
+  ]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -462,6 +457,8 @@ export default function Index() {
       handleSend();
     }
   }, [handleSend]);
+
+  // ✅ Voice toggle ✅ CORRIGIDO - movido para posição correta
   const toggleVoice = useCallback(() => {
     if (audioAnalyzer.isActive) {
       audioAnalyzer.stop();
@@ -472,7 +469,7 @@ export default function Index() {
     }
   }, [audioAnalyzer.isActive, audioAnalyzer]);
 
-  // ✅ Funções de conversa otimizadas
+  // ✅ Funções de conversa
   const createNewConversation = useCallback(() => {
     const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const newConv = { 
@@ -522,7 +519,7 @@ export default function Index() {
         sidebarOpen ? "blur-md scale-[0.98] pointer-events-none lg:blur-none lg:scale-100 lg:pointer-events-auto" : ""
       }`}>
         
-        {/* Header moderno */}
+        {/* Header */}
         <header className="h-16 border-b border-slate-800/50 bg-slate-900/95 backdrop-blur-xl sticky top-0 z-20 flex items-center px-6 gap-4">
           <button 
             onClick={() => setSidebarOpen(true)} 
