@@ -1,5 +1,3 @@
-
-```tsx
 import { useState, useRef, useEffect, KeyboardEvent, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -15,7 +13,7 @@ import { jsPDF } from "jspdf";
 import { analisarComGroq, salvarNoRedis, buscarDoRedis, falarTexto } from "@/lib/aura-engine";
 
 // ═══════════════════════════════════════════════════════════════
-// TIPOS (EXPANDIDOS DO CÓDIGO 1 + COMPATÍVEIS COM CÓDIGO 2)
+// TIPOS
 // ═══════════════════════════════════════════════════════════════
 
 interface Source {
@@ -45,17 +43,7 @@ interface Conversation {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// FUNÇÕES DO CÓDIGO 2 INTEGRADAS (SUBSTITUINDO MOCKS)
-// ═══════════════════════════════════════════════════════════════
-
-// Funções reais já importadas do "@/lib/aura-engine"
-// - analisarComGroq ✅
-// - buscarDoRedis ✅  
-// - salvarNoRedis ✅
-// - falarTexto ✅
-
-// ═══════════════════════════════════════════════════════════════
-// HOOK: useAudioAnalyzer (PRESERVADO DO CÓDIGO 1)
+// HOOK: useAudioAnalyzer
 // ═══════════════════════════════════════════════════════════════
 
 function useAudioAnalyzer() {
@@ -100,7 +88,7 @@ function useAudioAnalyzer() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// COMPONENTES UI PRESERVADOS DO CÓDIGO 1
+// COMPONENTES UI
 // ═══════════════════════════════════════════════════════════════
 
 function NeuralOrb({ isActive, volume, frequency, isProcessing }: { isActive: boolean; volume: number; frequency: number; isProcessing: boolean }) {
@@ -191,17 +179,13 @@ function ResearchStatus({ isResearching, query, sourcesCount }: { isResearching:
       )}
       <span style={{ color: '#a3a3a3', fontSize: '12px' }}>
         {isResearching
-          ? `🔍 Pesquisando "${query?.slice(0, 30) || ''}${query && query.length > 30 ? '...' : ''}"`
-          : `✅ ${sourcesCount || 0} fontes encontradas`
+          ? <span>Pesquisando <strong>"{query?.slice(0, 30) || ''}{query && query.length > 30 ? '...' : ''}"</strong></span>
+          : <span>✅ {sourcesCount || 0} fontes encontradas</span>
         }
       </span>
     </motion.div>
   );
 }
-
-// ═══════════════════════════════════════════════════════════════
-// ChatSidebar (PRESERVADO DO CÓDIGO 1)
-// ═══════════════════════════════════════════════════════════════
 
 function ChatSidebar({ conversations, activeId, onSelect, onNew, isOpen, onClose }: {
   conversations: Conversation[];
@@ -231,13 +215,13 @@ function ChatSidebar({ conversations, activeId, onSelect, onNew, isOpen, onClose
 
       <aside
         style={{
-          position: isOpen ? 'fixed' : undefined,
+          position: isOpen ? 'fixed' : 'relative',
           top: 0, left: 0, height: '100%', width: '260px',
           background: '#080808',
           borderRight: '1px solid #1a1a1a',
           display: 'flex', flexDirection: 'column',
           zIndex: 50,
-          transform: isOpen ? 'translateX(0)' : undefined,
+          transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
           transition: 'transform 300ms',
         }}
         className={`fixed lg:relative ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
@@ -296,7 +280,7 @@ function ChatSidebar({ conversations, activeId, onSelect, onNew, isOpen, onClose
 }
 
 // ═══════════════════════════════════════════════════════════════
-// LÓGICA DO CÓDIGO 2 INTEGRADA (analyzeResearchIntent + Sources)
+// LÓGICA DE RESEARCH
 // ═══════════════════════════════════════════════════════════════
 
 const analyzeResearchIntent = (text: string): { 
@@ -359,7 +343,6 @@ const analyzeResearchIntent = (text: string): {
   return { needsResearch, query, contextType, prioritySources };
 };
 
-// Source fetchers DO CÓDIGO 2 (REAIS)
 const fetchWikipedia = async (query: string, searchCache: Map<string, Source[]>, setSearchCache: (cache: Map<string, Source[]>) => void): Promise<Source[]> => {
   try {
     const cacheKey = `wiki_${query}`;
@@ -387,7 +370,6 @@ const fetchWikipedia = async (query: string, searchCache: Map<string, Source[]>,
   }
 };
 
-```tsx
 const fetchScielo = async (query: string, searchCache: Map<string, Source[]>, setSearchCache: (cache: Map<string, Source[]>) => void): Promise<Source[]> => {
   try {
     const cacheKey = `scielo_${query}`;
@@ -484,7 +466,7 @@ const searchSources = async (query: string, prioritySources: string[], searchCac
 };
 
 // ═══════════════════════════════════════════════════════════════
-// COMPONENTE PRINCIPAL: Index (HÍBRIDO FINAL)
+// COMPONENTE PRINCIPAL: Index
 // ═══════════════════════════════════════════════════════════════
 
 export default function Index() {
@@ -541,7 +523,7 @@ export default function Index() {
     }
   }, [input]);
 
-  // PDF Export (MELHORADO DO CÓDIGO 2)
+  // PDF Export (CORRIGIDO - Sem emojis em template literals)
   const exportarParaPDF = (messages: Message[]) => {
     if (!messages.length) return;
     
@@ -552,7 +534,7 @@ export default function Index() {
     doc.rect(0, 0, 210, 35, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(22);
-    doc.text("🧠 AURA IA - UNINTA TIANGUÁ", 20, 22);
+    doc.text("AURA IA - UNINTA TIANGUÁ", 20, 22);
     doc.setFontSize(11);
     doc.text(`Campus Tianguá | ${new Date().toLocaleDateString('pt-BR')} | ID: ${userId.toUpperCase()}`, 20, 32);
     
@@ -568,7 +550,7 @@ export default function Index() {
     if (ultimaMsg.sources?.length) {
       doc.setFontSize(16);
       doc.setTextColor(60, 60, 60);
-      doc.text("📚 REFERÊNCIAS ACADÊMICAS", 15, yPosition);
+      doc.text("REFERÊNCIAS ACADÊMICAS", 15, yPosition);
       yPosition += 20;
 
       ultimaMsg.sources.forEach((source, idx) => {
@@ -577,14 +559,14 @@ export default function Index() {
           yPosition = 25;
         }
         
-        const icon = {
-          'wikipedia': '📖', 'scielo': '🔬', 'pubmed': '🧬', 
-          'arxiv': '📄', 'scholar': '🎓', 'uninta': '🏫'
-        }[source.type] || '📚';
+        const iconMap = {
+          'wikipedia': '[WIKI]', 'scielo': '[SCIELO]', 'pubmed': '[PUBMED]', 
+          'arxiv': '[ARXIV]', 'scholar': '[SCHOLAR]', 'uninta': '[UNINTA]'
+        };
         
         doc.setFontSize(13);
         doc.setTextColor(40, 100, 200);
-        doc.text(`${icon} ${source.type.toUpperCase()}`, 15, yPosition);
+        doc.text(`${iconMap[source.type] || '[SOURCE]'} ${source.type.toUpperCase()}`, 15, yPosition);
         yPosition += 12;
         
         doc.setFontSize(11);
@@ -625,7 +607,7 @@ export default function Index() {
     }));
   };
 
-  // HANDLE SEND COM FUNÇÕES REAIS DO CÓDIGO 2
+  // HANDLE SEND COM FUNÇÕES REAIS
   const handleSend = async () => {
     if (!input.trim() || isTyping) return;
     
@@ -642,29 +624,29 @@ export default function Index() {
       
       let contexto = `AURA IA - UNINTA TIANGUÁ | ID: ${idParaBusca}
 
-🧠 MODO: ${analysis.contextType?.toUpperCase() || 'CONVERSACIONAL'}
+MODO: ${analysis.contextType?.toUpperCase() || 'CONVERSACIONAL'}
 
 `;
 
       if (analysis.contextType === 'uninta') {
-        contexto += `🏫 MODO UNINTA TIANGUÁ:
+        contexto += `MODO UNINTA TIANGUÁ:
 - Fale sobre campus, professores, estrutura
 - Seja recepcionista acolhedor`;
       } else if (analysis.contextType === 'academic') {
-        contexto += `🎓 MODO ACADÊMICO:
+        contexto += `MODO ACADÊMICO:
 - PhD Psicologia/Neurociência UNINTA
 - Estruture: Conceito → Evidências → Aplicação`;
       } else {
-        contexto += `💬 MODO CONVERSACIONAL:
+        contexto += `MODO CONVERSACIONAL:
 - Converse sobre psicologia/neurociência`;
       }
 
       contexto += `
 
-📚 HISTÓRICO:
+HISTÓRICO:
 ${historico.slice(-4).join("\n")}
 
-❓: ${userMsg}`;
+PERGUNTA: ${userMsg}`;
 
       let sources: Source[] = [];
 
@@ -673,25 +655,27 @@ ${historico.slice(-4).join("\n")}
         const fontesTexto = sources.map((s, i) => 
           `${s.citation} "${s.title.substring(0, 60)}..." [${s.type.toUpperCase()}]`
         ).join('\n');
-        contexto += `\n\n📚 FONTES (${sources.length}):\n${fontesTexto}`;
+        contexto += `\n\nFONTES (${sources.length}):\n${fontesTexto}`;
       }
 
-      // ✅ FUNÇÃO REAL DO CÓDIGO 2
       const resposta = await analisarComGroq(userMsg, contexto);
       
       addMessage("assistant", resposta, sources.length ? sources : undefined, analysis.query, analysis.contextType);
       
-      // ✅ FUNÇÃO REAL DO CÓDIGO 2
       await salvarNoRedis(idParaBusca, 
         `T:${analysis.contextType} | U: ${userMsg} | A: ${resposta} | S: ${JSON.stringify(sources)}`
       );
       
-      // ✅ FUNÇÃO REAL DO CÓDIGO 2
       falarTexto(resposta);
     } catch (error) {
       console.error('Erro:', error);
       addMessage("assistant", 
-        `⚠️ Erro nas sinapses. Tente novamente!\n\n💡 UNINTA:\n• "Oi, fale sobre Tianguá"\n• "Pesquise ansiedade SciELO"\n• "Professores psicologia?"`, 
+        `Erro nas sinapses. Tente novamente!
+
+SUGESTÕES UNINTA:
+- "Oi, fale sobre Tianguá"
+- "Pesquise ansiedade SciELO" 
+- "Professores psicologia?"`, 
         undefined, undefined, 'reception'
       );
     } finally {
@@ -740,7 +724,7 @@ ${historico.slice(-4).join("\n")}
   };
 
   // ═══════════════════════════════════════════════════════════════
-  // RENDER (UI 100% DO CÓDIGO 1)
+  // RENDER
   // ═══════════════════════════════════════════════════════════════
 
   return (
@@ -800,4 +784,40 @@ ${historico.slice(-4).join("\n")}
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={() => exportarParaPDF(messages)}
+              style={{
+                padding: '6px 12px',
+                background: 'rgba(220,38,38,0.1)',
+                border: '1px solid rgba(220,38,38,0.2)',
+                borderRadius: '6px',
+                color: '#dc2626',
+                fontSize: '12px',
+                cursor: 'pointer',
+              }}
+            >
+              PDF
+            </button>
+          </div>
+        </header>
+
+        {/* Messages */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <AnimatePresence>
+            {isResearching && researchQuery && (
+              <ResearchStatus isResearching={true} query={researchQuery} sourcesCount={0} />
+            )}
+            
+            {messages.map((message) => (
+              <motion.div
+                key={message.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                style={{
+                  alignSelf: message.role === 'user' ? 'flex-end' : 'flex-start',
+                  maxWidth: '80%',
+                }}
+              >
+               
