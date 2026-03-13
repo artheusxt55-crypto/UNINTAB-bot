@@ -1,4 +1,3 @@
-Aqui está o **código COMPLETO e CORRIGIDO**:
 
 ```tsx
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
