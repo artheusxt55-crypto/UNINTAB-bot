@@ -417,60 +417,220 @@ ${historico.slice(-4).join("\n")}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] bg-gradient-to-r from-primary/10 via-secondary/10 to-accent/10 rounded-full blur-[150px] animate-pulse" />
         <div className="absolute bottom-[-15  
-        <main className="flex-1 overflow-y-auto chat-scrollbar px-4 scroll-smooth">
+     import { useState, useRef, useEffect, KeyboardEvent } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Send, Mic, MicOff, Plus, Menu, Loader2, Zap, FileText, Search, BookOpen, Globe, GraduationCap, Brain } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import NeuralOrb from "@/components/NeuralOrb";
+import { useAudioAnalyzer } from "@/hooks/useAudioAnalyzer";
+import ChatSidebar from "@/components/ChatSidebar";
+import { analisarComGroq, salvarNoRedis, buscarDoRedis, falarTexto } from "@/lib/aura-engine";
+import { jsPDF } from "jspdf";
+
+// --- Interfaces ---
+interface Message {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: Date;
+  sources?: Array<{
+    type: 'wikipedia' | 'scientific' | 'academic';
+    title: string;
+    url: string;
+    snippet: string;
+    citation?: string;
+  }>;
+}
+
+interface Conversation {
+  id: string;
+  title: string;
+  messages: Message[];
+  createdAt: Date;
+}
+
+// --- Componentes Auxiliares ---
+function TypingIndicator() {
+  return (
+    <div className="flex gap-1 items-center px-1 py-2">
+      {[0, 1, 2].map((i) => (
+        <motion.div
+          key={i}
+          className="w-2 h-2 rounded-full bg-primary/60"
+          animate={{ y: [0, -6, 0], opacity: [0.4, 1, 0.4] }}
+          transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.15 }}
+        />
+      ))}
+    </div>
+  );
+}
+
+export default function Index() {
+  const [conversations, setConversations] = useState<Conversation[]>([
+    { id: "1", title: "Nova conversa", messages: [], createdAt: new Date() },
+  ]);
+  const [activeConvId, setActiveConvId] = useState("1");
+  const [input, setInput] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const [isResearching, setIsResearching] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showVoiceOrb, setShowVoiceOrb] = useState(false);
+  const [userId, setUserId] = useState<string>("");
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const audioAnalyzer = useAudioAnalyzer();
+
+  // ✅ Persistência do ID do Untbot
+  useEffect(() => {
+    const savedId = localStorage.getItem('untbot_last_id');
+    if (savedId) setUserId(savedId);
+  }, []);
+
+  // ✅ Auto-scroll
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [conversations, isTyping]);
+
+  // ✅ Lógica de Pesquisa e Envio
+  const handleSend = async () => {
+    if (!input.trim() || isTyping) return;
+    
+    const userMsg = input.trim();
+    const needsSearch = /pesquise|procure|busque|wiki|fonte|artigo/i.test(userMsg);
+    
+    // Add user message
+    const newMessage: Message = {
+      id: Date.now().toString(),
+      role: "user",
+      content: userMsg,
+      timestamp: new Date()
+    };
+
+    setConversations(prev => prev.map(c => 
+      c.id === activeConvId ? { ...c, messages: [...c.messages, newMessage] } : c
+    ));
+
+    setInput("");
+    setIsTyping(true);
+    if (needsSearch) setIsResearching(true);
+
+    try {
+      const idParaBusca = userId || "lab_assistant";
+      const historico = await buscarDoRedis(idParaBusca);
+      
+      let contexto = `AURA IA | UNINTA LAB | ID: ${idParaBusca}\nResponda de forma técnica e acadêmica.\nHistórico: ${historico.slice(-3).join(" | ")}`;
+      
+      const resposta = await analisarComGroq(userMsg, contexto);
+      
+      const assistantMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: resposta,
+        timestamp: new Date()
+      };
+
+      setConversations(prev => prev.map(c => 
+        c.id === activeConvId ? { ...c, messages: [...c.messages, assistantMsg] } : c
+      ));
+
+      await salvarNoRedis(idParaBusca, `U: ${userMsg} | A: ${resposta}`);
+      falarTexto(resposta);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsTyping(false);
+      setIsResearching(false);
+    }
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const toggleVoice = () => {
+    if (audioAnalyzer.isActive) {
+      audioAnalyzer.stop();
+      setShowVoiceOrb(false);
+    } else {
+      audioAnalyzer.start();
+      setShowVoiceOrb(true);
+    }
+  };
+
+  const activeConversation = conversations.find(c => c.id === activeConvId) || conversations[0];
+  const messages = activeConversation.messages;
+
+  return (
+    <div className="flex h-screen bg-[#050505] text-slate-200 overflow-hidden font-sans">
+      <ChatSidebar
+        conversations={conversations}
+        activeConvId={activeConvId}
+        onSelect={(id) => { setActiveConvId(id); setSidebarOpen(false); }}
+        onNew={() => {
+          const id = Date.now().toString();
+          setConversations(prev => [{ id, title: "Nova conversa", messages: [], createdAt: new Date() }, ...prev]);
+          setActiveConvId(id);
+        }}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
+
+      <div className="flex-1 flex flex-col min-w-0 relative">
+        <header className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-black/20 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2"><Menu size={20}/></button>
+            <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
+              <GraduationCap size={18} className="text-primary" />
+            </div>
+            <h1 className="text-[10px] font-mono font-bold tracking-[0.2em] text-primary uppercase">UNINTA // LAB ASSISTANT</h1>
+          </div>
+          <button onClick={toggleVoice} className={`p-2 rounded-full ${audioAnalyzer.isActive ? "bg-red-500/20 text-red-500" : "hover:bg-white/5"}`}>
+            <Mic size={20} />
+          </button>
+        </header>
+
+        <main className="flex-1 overflow-y-auto px-4">
           {messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto space-y-6">
-              <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className="p-8 rounded-full bg-primary/5 border border-primary/10">
-                <Brain size={48} className="text-primary/40" />
-              </motion.div>
-              <div>
-                <h2 className="text-2xl font-bold text-white mb-2">Aura Neural</h2>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Como posso ajudar?
-                </p>
-              </div>
+            <div className="h-full flex flex-col items-center justify-center space-y-4">
+              <Brain size={40} className="text-primary/20 animate-pulse" />
+              <h2 className="text-xl font-semibold text-white">Como posso ajudar?</h2>
             </div>
           ) : (
-            <div className="max-w-4xl mx-auto w-full py-10 space-y-8">
-              <AnimatePresence mode="popLayout">
-                {messages.map((msg) => (
-                  <motion.div key={msg.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`flex gap-4 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
-                    <div className={`flex-1 max-w-[85%] space-y-3 ${msg.role === "user" ? "text-right" : ""}`}>
-                      <div className={`inline-block p-5 rounded-2xl text-sm leading-relaxed ${
-                        msg.role === "user" 
-                          ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20 text-left" 
-                          : "bg-white/5 border border-white/10 text-slate-100 backdrop-blur-md"
-                      }`}>
-                        <ReactMarkdown className="prose prose-invert prose-sm max-w-none">
-                          {msg.content}
-                        </ReactMarkdown>
-                      </div>
-
-                      {msg.sources && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-4">
-                          {msg.sources.map((source, idx) => (
-                            <a key={idx} href={source.url} target="_blank" rel="noopener noreferrer" className="p-3 rounded-xl bg-black/40 border border-white/5 hover:border-primary/40 transition-all group">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-[10px] font-bold text-primary">{source.citation}</span>
-                                <p className="text-xs font-bold text-white truncate group-hover:text-primary">{source.title}</p>
-                              </div>
-                              <p className="text-[10px] text-muted-foreground line-clamp-1">{source.snippet}</p>
-                            </a>
-                          ))}
-                        </div>
-                      )}
-
-                      {msg.role === 'assistant' && (
-                        <button onClick={() => exportarParaPDF(msg.content, msg.sources)} className="flex items-center gap-2 text-[10px] bg-white/5 hover:bg-primary/20 px-3 py-2 rounded-lg border border-white/10 transition-all font-mono uppercase">
-                          <FileText size={12} /> Gerar Relatório UNINTA
-                        </button>
-                      )}
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
+            <div className="max-w-3xl mx-auto py-10 space-y-6">
+              {messages.map((msg) => (
+                <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div className={`max-w-[85%] p-4 rounded-2xl ${msg.role === "user" ? "bg-primary text-white" : "bg-white/5 border border-white/10"}`}>
+                    <ReactMarkdown className="prose prose-invert prose-sm">{msg.content}</ReactMarkdown>
+                  </div>
+                </div>
+              ))}
               {isTyping && <TypingIndicator />}
               <div ref={messagesEndRef} />
             </div>
           )}
         </main>
+
+        <footer className="p-6">
+          <div className="max-w-3xl mx-auto flex items-end gap-2 bg-white/5 border border-white/10 rounded-2xl p-2 backdrop-blur-2xl">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Digite sua dúvida acadêmica..."
+              className="flex-1 bg-transparent border-0 focus:ring-0 text-sm p-2 resize-none outline-none"
+              rows={1}
+            />
+            <button onClick={handleSend} disabled={isTyping} className="p-3 bg-primary rounded-xl hover:scale-105 transition-all disabled:opacity-50">
+              {isTyping ? <Loader2 className="animate-spin" size={20}/> : <Send size={20}/>}
+            </button>
+          </div>
+        </footer>
+      </div>
+    </div>
+  );
+}
