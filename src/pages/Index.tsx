@@ -1,1055 +1,511 @@
-
-```tsx
-import { useState, useRef, useEffect, KeyboardEvent, useCallback } from "react";
+import { useState, useRef, useEffect, KeyboardEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Send, Mic, MicOff, Plus, X, Menu, Loader2, FileText, BookOpen,
-  Globe, GraduationCap, Brain, ExternalLink, Building2, MessageSquare, Search, Zap, Users
-} from "lucide-react";
+import { Send, Mic, MicOff, Plus, Menu, Loader2, Zap, FileText, Search, BookOpen, Globe } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import NeuralOrb from "@/components/NeuralOrb";
+import { useAudioAnalyzer } from "@/hooks/useAudioAnalyzer";
+import ChatSidebar from "@/components/ChatSidebar";
+import { analisarComGroq, salvarNoRedis, buscarDoRedis, falarTexto } from "@/lib/aura-engine";
 import { jsPDF } from "jspdf";
 
-// ═══════════════════════════════════════════════════════════════
-// IMPORTS DO CÓDIGO 2 (FUNÇÕES REAIS)
-// ═══════════════════════════════════════════════════════════════
-import { analisarComGroq, salvarNoRedis, buscarDoRedis, falarTexto } from "@/lib/aura-engine";
-
-// ═══════════════════════════════════════════════════════════════
-// TIPOS
-// ═══════════════════════════════════════════════════════════════
-
-interface Source {
-  type: 'wikipedia' | 'scielo' | 'pubmed' | 'arxiv' | 'scholar' | 'uninta';
-  title: string;
-  url: string;
-  snippet: string;
-  citation?: string;
-  reliability?: 'high' | 'medium' | 'low';
-}
-
 interface Message {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: Date;
-  sources?: Source[];
-  researchQuery?: string;
-  contextType?: 'academic' | 'conversational' | 'uninta' | 'reception';
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: Date;
+  sources?: Array<{
+    type: 'wikipedia' | 'scientific';
+    title: string;
+    url: string;
+    snippet: string;
+  }>;
 }
 
 interface Conversation {
-  id: string;
-  title: string;
-  messages: Message[];
-  createdAt: Date;
+  id: string;
+  title: string;
+  messages: Message[];
+  createdAt: Date;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// HOOK: useAudioAnalyzer
-// ═══════════════════════════════════════════════════════════════
-
-function useAudioAnalyzer() {
-  const [isActive, setIsActive] = useState(false);
-  const [volume, setVolume] = useState(0);
-  const [frequency, setFrequency] = useState(0);
-  const animFrameRef = useRef<number>();
-  const streamRef = useRef<MediaStream | null>(null);
-
-  const start = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      const ctx = new AudioContext();
-      const source = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 256;
-      source.connect(analyser);
-      setIsActive(true);
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      const tick = () => {
-        analyser.getByteFrequencyData(dataArray);
-        const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-        setVolume(avg / 255);
-        const maxIdx = dataArray.indexOf(Math.max(...dataArray));
-        setFrequency(maxIdx / dataArray.length);
-        animFrameRef.current = requestAnimationFrame(tick);
-      };
-      tick();
-    } catch (e) { console.error('Mic error:', e); }
-  }, []);
-
-  const stop = useCallback(() => {
-    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    streamRef.current?.getTracks().forEach(t => t.stop());
-    setIsActive(false);
-    setVolume(0);
-    setFrequency(0);
-  }, []);
-
-  return { isActive, volume, frequency, start, stop };
+interface WikipediaResponse {
+  query: {
+    search: Array<{
+      title: string;
+      snippet: string;
+      pageid: number;
+    }>;
+  };
 }
 
-// ═══════════════════════════════════════════════════════════════
-// COMPONENTES UI
-// ═══════════════════════════════════════════════════════════════
-
-function NeuralOrb({ isActive, volume, frequency, isProcessing }: { isActive: boolean; volume: number; frequency: number; isProcessing: boolean }) {
-  const scale = 1 + volume * 0.5;
-  return (
-    <div className="relative w-48 h-48 flex items-center justify-center">
-      <motion.div
-        className="absolute inset-0 rounded-full"
-        style={{ background: 'radial-gradient(circle, rgba(220,38,38,0.25) 0%, transparent 70%)' }}
-        animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
-        transition={{ duration: 2, repeat: Infinity }}
-      />
-      <motion.div
-        className="w-32 h-32 rounded-full"
-        style={{
-          background: 'radial-gradient(circle at 40% 40%, rgba(220,38,38,0.9), rgba(127,29,29,0.8), rgba(0,0,0,1))',
-          boxShadow: '0 0 30px rgba(220,38,38,0.3), 0 0 60px rgba(220,38,38,0.1)',
-        }}
-        animate={{ scale: isActive ? scale : 1 }}
-        transition={{ type: 'spring', stiffness: 200, damping: 15 }}
-      />
-      {isProcessing && (
-        <motion.div
-          className="absolute w-40 h-40 rounded-full border border-red-600/30"
-          animate={{ scale: [1, 1.5], opacity: [0.6, 0] }}
-          transition={{ duration: 1.5, repeat: Infinity }}
-        />
-      )}
-    </div>
-  );
+interface ArxivResponse {
+  feed: {
+    entry: Array<{
+      title: string;
+      link: Array<{ href: string; title?: string }>;
+      summary: string;
+    }>;
+  };
 }
 
 function TypingIndicator() {
-  return (
-    <div className="flex items-center gap-3 px-4 py-3">
-      <Brain size={18} style={{ color: '#dc2626', filter: 'drop-shadow(0 0 8px rgba(220,38,38,0.5))' }} />
-      <div className="flex items-center gap-2">
-        {[0, 1, 2].map((i) => (
-          <motion.div
-            key={i}
-            className="w-2.5 h-2.5 rounded-full"
-            style={{
-              backgroundColor: '#dc2626',
-              boxShadow: '0 0 8px rgba(220,38,38,0.6), 0 0 16px rgba(220,38,38,0.3)',
-            }}
-            animate={{
-              y: [0, -10, 0],
-              opacity: [0.4, 1, 0.4],
-              boxShadow: [
-                '0 0 4px rgba(220,38,38,0.3)',
-                '0 0 12px rgba(220,38,38,0.8), 0 0 24px rgba(220,38,38,0.4)',
-                '0 0 4px rgba(220,38,38,0.3)',
-              ],
-            }}
-            transition={{
-              duration: 1.2,
-              repeat: Infinity,
-              delay: i * 0.2,
-              ease: "easeInOut",
-            }}
-          />
-        ))}
-      </div>
-      <span style={{ color: '#737373', fontSize: '12px' }}>Processando UNINTA...</span>
-    </div>
-  );
+  return (
+    <div className="flex gap-1 items-center px-1 py-2">
+      {[0, 1, 2].map((i) => (
+        <motion.div
+          key={i}
+          className="w-2 h-2 rounded-full bg-primary/60"
+          animate={{ y: [0, -6, 0], opacity: [0.4, 1, 0.4] }}
+          transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.15 }}
+        />
+      ))}
+    </div>
+  );
 }
-
-function ResearchStatus({ isResearching, query, sourcesCount }: { isResearching: boolean; query?: string; sourcesCount?: number }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
-      style={{
-        background: 'rgba(220,38,38,0.08)',
-        border: '1px solid rgba(220,38,38,0.15)',
-        borderRadius: '12px',
-        padding: '10px 16px',
-        margin: '0 0 12px 0',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-      }}
-    >
-      {isResearching && (
-        <Loader2 size={14} style={{ color: '#dc2626', animation: 'spin 1s linear infinite' }} />
-      )}
-      <span style={{ color: '#a3a3a3', fontSize: '12px' }}>
-        {isResearching
-          ? <span>Pesquisando <strong>"{query?.slice(0, 30) || ''}{query && query.length > 30 ? '...' : ''}"</strong></span>
-          : <span>✅ {sourcesCount || 0} fontes encontradas</span>
-        }
-      </span>
-    </motion.div>
-  );
-}
-
-function ChatSidebar({ conversations, activeId, onSelect, onNew, isOpen, onClose }: {
-  conversations: Conversation[];
-  activeId: string;
-  onSelect: (id: string) => void;
-  onNew: () => void;
-  isOpen: boolean;
-  onClose: () => void;
-}) {
-  return (
-    <>
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            style={{
-              position: 'fixed', inset: 0, zIndex: 40,
-              background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(4px)',
-            }}
-            className="lg:hidden"
-          />
-        )}
-      </AnimatePresence>
-
-      <aside
-        style={{
-          position: isOpen ? 'fixed' : 'relative',
-          top: 0, left: 0, height: '100%', width: '260px',
-          background: '#080808',
-          borderRight: '1px solid #1a1a1a',
-          display: 'flex', flexDirection: 'column',
-          zIndex: 50,
-          transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
-          transition: 'transform 300ms',
-        }}
-        className={`fixed lg:relative ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
-      >
-        <div style={{ padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1a1a1a' }}>
-          <button
-            onClick={onNew}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px',
-              padding: '8px 12px', borderRadius: '8px', fontSize: '13px',
-              color: '#a3a3a3', background: 'transparent', border: 'none',
-              cursor: 'pointer', width: '100%', textAlign: 'left',
-              transition: 'background 200ms',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = '#141414')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-          >
-            <Plus size={16} style={{ color: '#dc2626' }} />
-            <span>Nova conversa</span>
-          </button>
-          <button onClick={onClose} className="lg:hidden" style={{ padding: '6px', borderRadius: '6px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#a3a3a3' }}>
-            <X size={16} />
-          </button>
-        </div>
-
-        <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
-          {conversations.map(conv => (
-            <button
-              key={conv.id}
-              onClick={() => onSelect(conv.id)}
-              style={{
-                width: '100%', textAlign: 'left',
-                padding: '10px 12px', borderRadius: '8px', fontSize: '13px',
-                marginBottom: '2px', border: 'none', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: '8px',
-                background: conv.id === activeId ? '#141414' : 'transparent',
-                color: conv.id === activeId ? '#e5e5e5' : '#737373',
-                transition: 'all 200ms',
-                overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
-              }}
-              onMouseEnter={e => { if (conv.id !== activeId) e.currentTarget.style.background = '#0f0f0f'; }}
-              onMouseLeave={e => { if (conv.id !== activeId) e.currentTarget.style.background = 'transparent'; }}
-            >
-              <MessageSquare size={14} style={{ color: conv.id === activeId ? '#dc2626' : '#525252', flexShrink: 0 }} />
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{conv.title}</span>
-            </button>
-          ))}
-        </div>
-
-        <div style={{ padding: '12px', borderTop: '1px solid #1a1a1a', textAlign: 'center' }}>
-          <p style={{ fontSize: '10px', color: '#525252' }}>AURA IA v3.1 • UNINTA</p>
-        </div>
-      </aside>
-    </>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// LÓGICA DE RESEARCH
-// ═══════════════════════════════════════════════════════════════
-
-const analyzeResearchIntent = (text: string): { 
-  needsResearch: boolean; 
-  query: string; 
-  contextType: Message['contextType'];
-  prioritySources: ('wikipedia' | 'scielo' | 'pubmed' | 'arxiv' | 'scholar' | 'uninta')[];
-} => {
-  const lowerText = text.toLowerCase().trim();
-  
-  const unintaTriggers = [
-    'uninta', 'tianguá', 'tiangua', 'professor', 'professora', 'docente',
-    'aluno', 'alunos', 'estudante', 'estudantes', 'coordenação', 'coordenador'
-  ];
-  
-  const academicTriggers = [
-    'pesquise', 'procure', 'busque', 'investigue', 'pesquisa sobre', 'fonte', 'referência',
-    'artigo', 'estudo', 'paper', 'arxiv', 'scielo', 'pubmed', 'scholar',
-    'wikipedia', 'wiki', 'definição', 'o que é', 'explique detalhadamente',
-    'evidência', 'estudos mostram', 'pesquisa indica'
-  ];
-  
-  const psychTerms = [
-    'psicologia', 'neurociência', 'cognição', 'terapia', 'psicanálise',
-    'depressão', 'ansiedade', 'trauma', 'inteligência', 'memória',
-    'dsm-5', 'terapia cognitivo-comportamental', 'tcc', 'psicopatologia'
-  ];
-  
-  const casualTriggers = ['oi', 'olá', 'e aí', 'como vai', 'tudo bem', 'fale sobre'];
-  
-  const hasUninta = unintaTriggers.some(trigger => lowerText.includes(trigger));
-  const hasAcademic = academicTriggers.some(trigger => lowerText.includes(trigger));
-  const hasPsychContext = psychTerms.some(term => lowerText.includes(term));
-  const isCasual = casualTriggers.some(trigger => lowerText.startsWith(trigger));
-  
-  let contextType: Message['contextType'] = 'conversational';
-  let needsResearch = false;
-  let query = text.trim();
-  let prioritySources: ('wikipedia' | 'scielo' | 'pubmed' | 'arxiv' | 'scholar' | 'uninta')[] = [];
-
-  if (hasUninta) {
-    contextType = 'uninta';
-    needsResearch = true;
-    prioritySources = ['uninta', 'wikipedia', 'scholar'];
-    query = `UNINTA Tianguá ${query}`;
-  } else if (hasAcademic || hasPsychContext) {
-    contextType = 'academic';
-    needsResearch = true;
-    prioritySources = ['scielo', 'pubmed', 'arxiv', 'scholar', 'wikipedia'];
-  } else if (isCasual) {
-    contextType = 'reception';
-    needsResearch = false;
-  }
-
-  if (hasAcademic) {
-    const match = lowerText.match(/(pesquise|procure|busque|investigue|pesquisa sobre)\s+(.+)/i);
-    if (match?.[2]) query = match[2].trim();
-  }
-  
-  return { needsResearch, query, contextType, prioritySources };
-};
-
-const fetchWikipedia = async (query: string, searchCache: Map<string, Source[]>, setSearchCache: (cache: Map<string, Source[]>) => void): Promise<Source[]> => {
-  try {
-    const cacheKey = `wiki_${query}`;
-    if (searchCache.has(cacheKey)) return searchCache.get(cacheKey)!;
-    
-    const response = await fetch(
-      `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=2&origin=*`
-    );
-    const data = await response.json();
-    
-    const results: Source[] = data.query?.search?.slice(0, 2).map((item: any, idx: number) => ({
-      type: 'wikipedia' as const,
-      title: item.title,
-      url: `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`,
-      snippet: item.snippet?.replace(/<[^>]*>/g, '').substring(0, 120) + '...' || 'Artigo da Wikipedia.',
-      citation: `[${idx + 1}]`,
-      reliability: 'medium' as const
-    })) || [];
-    
-    setSearchCache(prev => new Map(prev).set(cacheKey, results));
-    return results;
-  } catch (error) {
-    console.error('Wikipedia error:', error);
-    return [];
-  }
-};
-
-const fetchScielo = async (query: string, searchCache: Map<string, Source[]>, setSearchCache: (cache: Map<string, Source[]>) => void): Promise<Source[]> => {
-  try {
-    const cacheKey = `scielo_${query}`;
-    if (searchCache.has(cacheKey)) return searchCache.get(cacheKey)!;
-    
-    const results: Source[] = [{
-      type: 'scielo' as const,
-      title: `Artigo SciELO: "${query}"`,
-      url: `https://search.scielo.org/?q=${encodeURIComponent(query)}`,
-      snippet: `Artigo científico brasileiro sobre "${query}". Plataforma SciELO Brasil com milhares de estudos acadêmicos.`,
-      citation: '[1]',
-      reliability: 'high' as const
-    }];
-    
-    setSearchCache(prev => new Map(prev).set(cacheKey, results));
-    return results;
-  } catch (error) {
-    console.error('SciELO error:',
-    ```tsx
-  } catch (error) {
-    console.error('SciELO error:', error);
-    return [];
-  }
-};
-
-const fetchPubMed = async (query: string, searchCache: Map<string, Source[]>, setSearchCache: (cache: Map<string, Source[]>) => void): Promise<Source[]> => {
-  try {
-    const results: Source[] = [{
-      type: 'pubmed' as const,
-      title: `PubMed: "${query}"`,
-      url: `https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(query)}`,
-      snippet: 'Base MEDLINE com 35M+ citações biomédicas da NIH.',
-      citation: '[1]',
-      reliability: 'high' as const
-    }];
-    
-    const cacheKey = `pubmed_${query}`;
-    setSearchCache(prev => new Map(prev).set(cacheKey, results));
-    return results;
-  } catch (error) {
-    console.error('PubMed error:', error);
-    return [];
-  }
-};
-
-const fetchArxiv = async (query: string, searchCache: Map<string, Source[]>, setSearchCache: (cache: Map<string, Source[]>) => void): Promise<Source[]> => {
-  try {
-    const results: Source[] = [{
-      type: 'arxiv' as const,
-      title: `Arxiv: "${query}"`,
-      url: `https://arxiv.org/search/?query=${encodeURIComponent(query)}&searchtype=all&source=header`,
-      snippet: 'Preprints científicos de física, matemática, IA e mais.',
-      citation: '[1]',
-      reliability: 'high' as const
-    }];
-    
-    const cacheKey = `arxiv_${query}`;
-    setSearchCache(prev => new Map(prev).set(cacheKey, results));
-    return results;
-  } catch (error) {
-    console.error('Arxiv error:', error);
-    return [];
-  }
-};
-
-const fetchUninta = async (): Promise<Source[]> => {
-  return [{
-    type: 'uninta' as const,
-    title: "UNINTA Tianguá - Universidade Internacional do Cariri",
-    url: "https://uninta.edu.br/campus-tiangua/",
-    snippet: "Campus Tianguá da UNINTA. Cursos de Psicologia, Enfermagem e mais.",
-    citation: "[1]",
-    reliability: 'high' as const
-  }];
-};
-
-const searchSources = async (query: string, prioritySources: string[], searchCache: Map<string, Source[]>, setSearchCache: (cache: Map<string, Source[]>) => void): Promise<Source[]> => {
-  const allPromises = prioritySources.map(source => {
-    switch (source) {
-      case 'wikipedia': return fetchWikipedia(query, searchCache, setSearchCache);
-      case 'scielo': return fetchScielo(query, searchCache, setSearchCache);
-      case 'pubmed': return fetchPubMed(query, searchCache, setSearchCache);
-      case 'arxiv': return fetchArxiv(query, searchCache, setSearchCache);
-      case 'uninta': return fetchUninta();
-      case 'scholar': return Promise.resolve([] as Source[]);
-      default: return Promise.resolve([] as Source[]);
-    }
-  });
-
-  try {
-    const resultsArray = await Promise.all(allPromises);
-    return resultsArray.flat().slice(0, 6);
-  } catch (error) {
-    console.error('Multi-source search error:', error);
-    return [];
-  }
-};
-
-// ═══════════════════════════════════════════════════════════════
-// COMPONENTE PRINCIPAL: Index
-// ═══════════════════════════════════════════════════════════════
 
 export default function Index() {
-  const [conversations, setConversations] = useState<Conversation[]>([
-    { id: "1", title: "Nova conversa", messages: [], createdAt: new Date() },
-  ]);
-  const [activeConvId, setActiveConvId] = useState("1");
-  const [input, setInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const [isResearching, setIsResearching] = useState(false);
-  const [researchQuery, setResearchQuery] = useState("");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showVoiceOrb, setShowVoiceOrb] = useState(false);
-  const [userId, setUserId] = useState("");
-  const [searchCache, setSearchCache] = useState<Map<string, Source[]>>(new Map());
+  const [conversations, setConversations] = useState<Conversation[]>([
+    { id: "1", title: "Nova conversa", messages: [], createdAt: new Date() },
+  ]);
+  const [activeConvId, setActiveConvId] = useState("1");
+  const [input, setInput] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showVoiceOrb, setShowVoiceOrb] = useState(false);
+  const [userId, setUserId] = useState<string>("");
+  const [searchCache, setSearchCache] = useState<Map<string, any>>(new Map());
+  const [needsResearch, setNeedsResearch] = useState(false); // ← NOVA
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const audioAnalyzer = useAudioAnalyzer();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const audioAnalyzer = useAudioAnalyzer();
 
-  // Effects
-  useEffect(() => {
-    const analysis = analyzeResearchIntent(input);
-    setResearchQuery(analysis.query);
-    setIsResearching(analysis.needsResearch);
-  }, [input]);
+  // ✅ Detecção inteligente de pesquisa
+  useEffect(() => {
+    const lowerInput = input.toLowerCase();
+    const researchTriggers = [
+      'pesquise', 'procure', 'busque', 'wikipedia', 'wiki', 
+      'fonte', 'referência', 'artigo', 'estude', 'leia sobre',
+      'me diga sobre', 'definição de'
+    ];
+    setNeedsResearch(researchTriggers.some(trigger => lowerInput.includes(trigger)));
+  }, [input]);
 
-  useEffect(() => {
-    const savedId = localStorage.getItem('aura_ai_last_id');
-    if (savedId) setUserId(savedId);
-  }, []);
+  // Limpeza de cache a cada 10min
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSearchCache(new Map());
+    }, 600000);
+    return () => clearInterval(interval);
+  }, []);
 
-  useEffect(() => {
-    if (!userId && input.trim()) {
-      const timeoutId = setTimeout(() => {
-        const candidateId = input.toLowerCase().match(/^[a-zA-Z0-9_]+/);
-        if (candidateId) {
-          setUserId(candidateId[0]);
-          localStorage.setItem('aura_ai_last_id', candidateId[0]);
-        }
-      }, 1500);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [input, userId]);
+  useEffect(() => {
+    const savedId = localStorage.getItem('untbot_last_id');
+    if (savedId) setUserId(savedId);
+  }, []);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [conversations, isTyping]);
+  // Debounce para userId
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (input.trim() && !userId && input.toLowerCase().match(/^[a-zA-Z0-9_]+$/)) {
+        setUserId(input.toLowerCase());
+        localStorage.setItem('untbot_last_id', input.toLowerCase());
+      }
+    }, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [input, userId]);
 
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + "px";
-    }
-  }, [input]);
+  const fetchWikipedia = async (query: string): Promise<any[]> => {
+    try {
+      const cached = searchCache.get(`wiki_${query}`);
+      if (cached) return cached;
+      
+      const response = await fetch(
+        `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=3&origin=*`
+      );
+      const data: WikipediaResponse = await response.json();
+      const results = data.query.search.slice(0, 3).map((item: any) => ({
+        type: 'wikipedia' as const,
+        title: item.title,
+        url: `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`,
+        snippet: item.snippet.replace(/<[^>]*>/g, '').substring(0, 150) + '...'
+      }));
+      
+      setSearchCache(prev => new Map(prev).set(`wiki_${query}`, results));
+      return results;
+    } catch (error) {
+      console.error('Wikipedia API error:', error);
+      return [];
+    }
+  };
 
-  // PDF Export
-  const exportarParaPDF = (messages: Message[]) => {
-    if (!messages.length) return;
-    
-    const ultimaMsg = messages[messages.length - 1];
-    const doc = new jsPDF();
-    
-    doc.setFillColor(63, 97, 252);
-    doc.rect(0, 0, 210, 35, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
-    doc.text("AURA IA - UNINTA TIANGUÁ", 20, 22);
-    doc.setFontSize(11);
-    doc.text(`Campus Tianguá | ${new Date().toLocaleDateString('pt-BR')} | ID: ${userId.toUpperCase()}`, 20, 32);
-    
-    let yPosition = 50;
-    doc.setTextColor(30, 30, 30);
-    
-    const cleanText = ultimaMsg.content.replace(/[*#]/g, '');
-    const splitText = doc.splitTextToSize(cleanText, 180);
-    doc.setFontSize(12);
-    doc.text(splitText, 15, yPosition);
-    yPosition += (splitText.length * 6) + 20;
+  const fetchArxiv = async (query: string): Promise<any[]> => {
+    try {
+      const cached = searchCache.get(`arxiv_${query}`);
+      if (cached) return cached;
+      
+      const response = await fetch(
+        `http://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&start=0&max_results=3&sortBy=submittedDate&sortOrder=descending`
+      );
+      const data: ArxivResponse = await response.json();
+      
+      const results = data.feed.entry.slice(0, 3).map((entry: any) => {
+        const pdfLink = entry.link.find((link: any) => link.title === 'pdf');
+        return {
+          type: 'scientific' as const,
+          title: entry.title,
+          url: pdfLink?.href || entry.link[0].href,
+          snippet: entry.summary.replace(/<[^>]*>/g, '').substring(0, 150) + '...'
+        };
+      });
+      
+      setSearchCache(prev => new Map(prev).set(`arxiv_${query}`, results));
+      return results;
+    } catch (error) {
+      console.error('ArXiv API error:', error);
+      return [];
+    }
+  };
 
-    if (ultimaMsg.sources?.length) {
-      doc.setFontSize(16);
-      doc.setTextColor(60, 60, 60);
-      doc.text("REFERÊNCIAS ACADÊMICAS", 15, yPosition);
-      yPosition += 20;
+  const searchSources = async (query: string): Promise<any[]> => {
+    const [wikiResults, arxivResults] = await Promise.all([
+      fetchWikipedia(query),
+      fetchArxiv(query)
+    ]);
+    return [...wikiResults, ...arxivResults];
+  };
 
-      ultimaMsg.sources.forEach((source, idx) => {
-        if (yPosition > 260) {
-          doc.addPage();
-          yPosition = 25;
-        }
-        
-        const iconMap = {
-          'wikipedia': '[WIKI]', 'scielo': '[SCIELO]', 'pubmed': '[PUBMED]', 
-          'arxiv': '[ARXIV]', 'scholar': '[SCHOLAR]', 'uninta': '[UNINTA]'
-        };
-        
-        doc.setFontSize(13);
-        doc.setTextColor(40, 100, 200);
-        doc.text(`${iconMap[source.type] || '[SOURCE]'} ${source.type.toUpperCase()}`, 15, yPosition);
-        yPosition += 12;
-        
-        doc.setFontSize(11);
-        doc.setTextColor(30, 30, 30);
-        doc.text(`${idx + 1}. ${source.title.substring(0, 65)}${source.title.length > 65 ? '...' : ''}`, 18, yPosition);
-        doc.setFontSize(9);
-        doc.setTextColor(100, 100, 100);
-        const shortUrl = source.url.replace(/^https?:\/\//, '').substring(0, 85);
-        doc.text(shortUrl, 20, yPosition + 5);
-        yPosition += 16;
-      });
-    }
-    
-    doc.save(`aura_uninta_${userId || 'tiangua'}_${Date.now()}.pdf`);
-  };
+  const exportarParaPDF = (texto: string, sources?: Message['sources']) => {
+    const doc = new jsPDF();
+    doc.setFillColor(227, 6, 19);
+    doc.rect(0, 0, 210, 25, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.text("PSICO AI - RELATÓRIO PSICOLÓGICO", 15, 16); // ← Mudança sutil
+    doc.setFontSize(8);
+    doc.text(`ID: ${userId.toUpperCase()} | DATA: ${new Date().toLocaleDateString()}`, 140, 16);
+    doc.setTextColor(50, 50, 50);
+    doc.setFontSize(11);
+    
+    let yPosition = 40;
+    const cleanText = texto.replace(/[*#]/g, '');
+    const splitText = doc.splitTextToSize(cleanText, 180);
+    doc.text(splitText, 15, yPosition);
+    yPosition += (splitText.length * 5) + 15;
 
-  const activeConversation = conversations.find(c => c.id === activeConvId) || conversations[0];
-  const messages = activeConversation.messages;
+    if (sources && sources.length > 0) {
+      doc.setFontSize(10);
+      doc.setTextColor(100, 100, 100);
+      doc.text("🔍 REFERÊNCIAS CONSULTADAS:", 15, yPosition);
+      yPosition += 10;
+      
+      sources.forEach((source) => {
+        if (yPosition > 270) {
+          doc.addPage();
+          yPosition = 20;
+        }
+        const icon = source.type === 'wikipedia' ? '📖' : '🔬';
+        const titleLine = `${icon} ${source.title.substring(0, 60)}${source.title.length > 60 ? '...' : ''}`;
+        doc.text(titleLine, 15, yPosition);
+        doc.setFontSize(8);
+        const urlLine = source.url.replace('http://', '').replace('https://', '').substring(0, 80);
+        doc.text(urlLine, 15, yPosition + 4);
+        doc.setFontSize(10);
+        yPosition += 14;
+      });
+    }
+    
+    doc.save(`psico_ai_${userId || 'lab'}_${Date.now()}.pdf`);
+  };
 
-  const addMessage = (role: "user" | "assistant", content: string, sources?: Source[], researchQuery?: string, contextType?: Message['contextType']) => {
-    const msg: Message = {
-      id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      role,
-      content,
-      timestamp: new Date(),
-      sources,
-      researchQuery,
-      contextType
-    };
-    
-    setConversations(prev => prev.map(c => {
-      if (c.id !== activeConvId) return c;
-      const updated = { ...c, messages: [...c.messages, msg] };
-      if (role === "user" && c.messages.length === 0) {
-        updated.title = content.slice(0, 50) + (content.length > 50 ? "..." : "");
-      }
-      return updated;
-    }));
-  };
+  const activeConversation = conversations.find((c) => c.id === activeConvId) || conversations[0];
+  const messages = activeConversation.messages;
 
-  // HANDLE SEND
-  const handleSend = async () => {
-    if (!input.trim() || isTyping) return;
-    
-    const userMsg = input.trim();
-    const analysis = analyzeResearchIntent(userMsg);
-    
-    addMessage("user", userMsg, undefined, undefined, analysis.contextType);
-    setInput("");
-    setIsTyping(true);
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isTyping]);
 
-    try {
-      const idParaBusca = userId || userMsg.slice(0, 20).toLowerCase();
-      const historico = await buscarDoRedis(idParaBusca);
-      
-      let contexto = `AURA IA - UNINTA TIANGUÁ | ID: ${idParaBusca}
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + "px";
+    }
+  }, [input]);
 
-MODO: ${analysis.contextType?.toUpperCase() || 'CONVERSACIONAL'}
+  const addMessage = (role: "user" | "assistant", content: string, sources?: Message['sources']) => {
+    const msg: Message = { 
+      id: Date.now().toString() + Math.random(), 
+      role, 
+      content, 
+      timestamp: new Date(),
+      sources 
+    };
+    setConversations((prev) =>
+      prev.map((c) => {
+        if (c.id !== activeConvId) return c;
+        const updated = { ...c, messages: [...c.messages, msg] };
+        if (role === "user" && c.messages.length === 0) {
+          updated.title = content.slice(0, 40) + (content.length > 40 ? "..." : "");
+        }
+        return updated;
+      })
+    );
+  };
 
-`;
+  const handleSend = async () => {
+    if (!input.trim() || isTyping) return;
+    const userMsg = input.trim();
 
-      if (analysis.contextType === 'uninta') {
-        contexto += `MODO UNINTA TIANGUÁ:
-- Fale sobre campus, professores, estrutura
-- Seja recepcionista acolhedor`;
-      } else if (analysis.contextType === 'academic') {
-        contexto += `MODO ACADÊMICO:
-- PhD Psicologia/Neurociência UNINTA
-- Estruture: Conceito → Evidências → Aplicação`;
-      } else {
-        contexto += `MODO CONVERSACIONAL:
-- Converse sobre psicologia/neurociência`;
-      }
+    addMessage("user", userMsg);
+    setInput("");
+    setIsTyping(true);
 
-      contexto += `
+    try {
+      const idParaBusca = userId || userMsg.toLowerCase();
+      const historico = await buscarDoRedis(idParaBusca);
+      
+      // ✅ PROMPT PSICOLOGIA - SEM citações automáticas
+      let contexto = `PSICO AI - Especialista em Psicologia | ID: ${idParaBusca}
+      
+REGRAS OBRIGATÓRIAS:
+1. NUNCA cite artigos/fuentes automaticamente
+2. Conversa natural como psicólogo experiente
+3. SÓ use pesquisa quando usuário pedir explicitamente
+4. Mantenha equilíbrio: 90% conversa natural, 10% pesquisa
 
-HISTÓRICO:
-${historico.slice(-4).join("\n")}
+Histórico: ${historico.slice(-3).join(" | ")}
+      
+Pergunta: ${userMsg}`;
 
-PERGUNTA: ${userMsg}`;
+      let sources: any[] = [];
+      
+      // ✅ SÓ pesquisa quando necessário
+      if (needsResearch) {
+        addMessage("assistant", "🔍 Pesquisando Wikipedia + ArXiv...", []);
+        sources = await searchSources(userMsg);
+        
+        const fonteTexto = sources.length > 0 
+          ? `\n\nREFERÊNCIAS (${sources.length}):\n${sources.map(s => `• ${s.title.substring(0, 50)}... (${s.type})`).join('\n')}`
+          : '\n\n*Nenhuma referência encontrada*';
+        
+        contexto += fonteTexto;
+      }
 
-      let sources: Source[] = [];
+      const resposta = await analisarComGroq(userMsg, contexto);
+      
+      // ✅ Remove loading corretamente
+      setConversations(prev => 
+        prev.map(c => {
+          if (c.id !== activeConvId) return c;
+          const cleanMessages = c.messages.filter(m => 
+            !m.content.includes('Pesquisando') && 
+            !m.content.includes('pesquisando')
+          );
+          return {
+            ...c,
+            messages: [...cleanMessages, {
+              id: Date.now().toString(),
+              role: 'assistant' as const,
+              content: resposta,
+              timestamp: new Date(),
+              sources: sources.length > 0 ? sources : undefined
+            }]
+          };
+        })
+      );
+      
+      await salvarNoRedis(idParaBusca, `U: ${userMsg} | B: ${resposta} | S: ${JSON.stringify(sources)} | R: ${needsResearch}`);
+      falarTexto(resposta);
+    } catch (error) {
+      console.error('Erro na comunicação:', error);
+      addMessage("assistant", "⚠️ Erro de conexão neural. Verifique sua internet.\n\n💡 **Dica:** Perguntas específicas funcionam melhor!");
+    } finally {
+      setIsTyping(false);
+      setNeedsResearch(false);
+    }
+  };
 
-      if (analysis.needsResearch && analysis.prioritySources.length > 0) {
-        sources = await searchSources(analysis.query, analysis.prioritySources, searchCache, setSearchCache);
-        const fontesTexto = sources.map((s, i) => 
-          `${s.citation} "${s.title.substring(0, 60)}..." [${s.type.toUpperCase()}]`
-        ).join('\n');
-        contexto += `\n\nFONTES (${sources.length}):\n${fontesTexto}`;
-      }
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
 
-      const resposta = await analisarComGroq(userMsg, contexto);
-      
-      addMessage("assistant", resposta, sources.length ? sources : undefined, analysis.query, analysis.contextType);
-      
-      await salvarNoRedis(idParaBusca, 
-        `T:${analysis.contextType} | U: ${userMsg} | A: ${resposta} | S: ${JSON.stringify(sources)}`
-      );
-      
-      falarTexto(resposta);
-    } catch (error) {
-      console.error('Erro:', error);
-      addMessage("assistant", 
-        `Erro nas sinapses. Tente novamente!
+  const toggleVoice = () => {
+    if (audioAnalyzer.isActive) {
+      audioAnalyzer.stop();
+      setShowVoiceOrb(false);
+    } else {
+      audioAnalyzer.start();
+      setShowVoiceOrb(true);
+    }
+  };
 
-SUGESTÕES UNINTA:
-- "Oi, fale sobre Tianguá"
-- "Pesquise ansiedade SciELO" 
-- "Professores psicologia?"`, 
-        undefined, undefined, 'reception'
-      );
-    } finally {
-      setIsTyping(false);
-      setIsResearching(false);
-    }
-  };
+  return (
+    <div className="flex h-screen bg-background overflow-hidden font-sans relative selection:bg-primary/30">
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-500/5 rounded-full blur-[120px]" />
+      </div>
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
+      <ChatSidebar
+        conversations={conversations}
+        activeConvId={activeConvId}
+        onSelect={(id) => { setActiveConvId(id); setSidebarOpen(false); }}
+        onNew={() => {
+          const id = Date.now().toString();
+          setConversations(prev => [{ id, title: "Nova conversa", messages: [], createdAt: new Date() }, ...prev]);
+          setActiveConvId(id);
+        }}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
 
-  const toggleVoice = () => {
-    if (audioAnalyzer.isActive) {
-      audioAnalyzer.stop();
-      setShowVoiceOrb(false);
-    } else {
-      audioAnalyzer.start();
-      setShowVoiceOrb(true);
-    }
-  };
+      <AnimatePresence>
+        {sidebarOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setSidebarOpen(false)}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[40] lg:hidden"
+          />
+        )}
+      </AnimatePresence>
 
-  const sourceIcon = (type: Source['type']) => {
-    const map: Record<string, JSX.Element> = {
-      wikipedia: <Globe size={14} />, scielo: <BookOpen size={14} />,
-      pubmed: <GraduationCap size={14} />, arxiv: <FileText size={14} />,
-      uninta: <Building2 size={14} />, scholar: <GraduationCap size={14} />,
-    };
-    return map[type] || <Globe size={14} />;
-  };
+      <div className={`flex-1 flex flex-col min-w-0 relative z-10 transition-all duration-500 ${sidebarOpen ? "blur-md scale-[0.98] pointer-events-none lg:blur-none lg:scale-100 lg:pointer-events-auto" : ""}`}>
+        <header className="flex items-center gap-3 px-6 py-4 border-b border-white/5 bg-background/40 backdrop-blur-xl">
+          <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground"><Menu size={20} /></button>
+          <div className="flex items-center gap-3 flex-1">
+            <div className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary shadow-[0_0_8px_rgba(var(--primary),0.8)]"></span>
+            </div>
+            <h1 className="text-xs font-bold font-mono tracking-[0.2em] text-primary uppercase text-glow">
+              UNINTA // {userId ? `${userId.toUpperCase()} 🧠` : "PSICO AI"}
+            </h1>
+          </div>
+          <button onClick={() => {
+            const id = Date.now().toString();
+            setConversations(prev => [{ id, title: "Nova conversa", messages: [], createdAt: new Date() }, ...prev]);
+            setActiveConvId(id);
+          }} className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground"><Plus size={20} /></button>
+        </header>
 
-  const contextBadge = (ct?: string) => {
-    if (!ct || ct === 'conversational') return null;
-    const labels: Record<string, string> = { uninta: 'UNINTA', academic: 'ACADÊMICO', reception: 'RECEPÇÃO' };
-    return (
-      <span style={{
-        fontSize: '10px', padding: '2px 8px', borderRadius: '99px', fontWeight: 600,
-        background: 'rgba(220,38,38,0.1)', color: '#dc2626',
-      }}>
-        {labels[ct] || ct}
-      </span>
-    );
-  };
-
-  // ═══════════════════════════════════════════════════════════════
-  // RENDER
-  // ═══════════════════════════════════════════════════════════════
-
-  return (
-    <div style={{
-      display: 'flex', height: '100vh', overflow: 'hidden',
-      background: '#000000',
-    }}>
-      {/* Gradient overlay animado */}
-      <div style={{
-        position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0,
-        background: 'radial-gradient(ellipse at 50% 0%, rgba(69,10,10,0.15) 0%, transparent 65%), radial-gradient(ellipse at 80% 100%, rgba(69,10,10,0.08) 0%, transparent 55%)',
-        animation: 'bgDrift 20s ease-in-out infinite',
-      }} />
-
-      <style>{`
-        @keyframes bgDrift {
-          0%, 100% { opacity: 0.8; }
-          50% { opacity: 1.2; }
-        }
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
-
-      {/* Sidebar */}
-      <ChatSidebar
-        conversations={conversations}
-        activeId={activeConvId}
-        onSelect={(id) => { setActiveConvId(id); setSidebarOpen(false); }}
-        onNew={() => {
-          const id = Date.now().toString();
-          setConversations(prev => [{ id, title: "Nova conversa", messages: [], createdAt: new Date() }, ...prev]);
-          setActiveConvId(id);
-        }}
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
-
-      {/* Main Chat Area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative', zIndex: 1 }}>
-
-        {/* Header */}
-        <header style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '0 16px', height: '48px', borderBottom: '1px solid rgba(255,255,255,0.06)',
-          flexShrink: 0,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button onClick={() => setSidebarOpen(true)} className="lg:hidden" style={{ padding: '6px', borderRadius: '6px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
-              <Menu size={18} style={{ color: '#737373' }} />
-            </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Brain size={22} style={{ color: '#dc2626', filter: 'drop-shadow(0 0 10px rgba(220,38,38,0.4))' }} />
-              <div>
-                <h1 style={{ fontSize: '14px', fontWeight: 700, color: '#e5e5e5', lineHeight: 1, margin: 0 }}>AURA</h1>
-                <p style={{ fontSize: '10px', color: '#525252', margin: 0 }}>UNINTA TIANGUÁ LAB</p>
-              </div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button
-              onClick={() => exportarParaPDF(messages)}
-              style={{
-                padding: '6px 12px',
-                background: 'rgba(220,38,38,0.1)',
-                border: '1px solid rgba(220,38,38,0.2)',
-                borderRadius: '6px',
-                color: '#dc2626',
-                fontSize: '12px',
-                cursor: 'pointer',
-              }}
-            >
-              PDF
-            </button>
-          </div>
-        </header>
-
-        {/* Messages */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <AnimatePresence>
-            {messages.map((message) => (
-              <motion.div
-                key={message.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                style={{
-                  alignSelf: message.role === 'user' ? 'flex-end' : 'flex-start',
-                  maxWidth: '80%',
-                }}
-              >
-                <div style={{
-                  padding: '12px 16px',
-                                  borderRadius: '16px',
-                  background: message.role === 'user' 
-                    ? 'linear-gradient(135deg, rgba(220,38,38,0.15) 0%, rgba(127,29,29,0.2) 100%)'
-                    : 'rgba(255,255,255,0.03)',
-                  border: message.role === 'user' 
-                    ? '1px solid rgba(220,38,38,0.3)' 
-                    : '1px solid rgba(255,255,255,0.08)',
-                  backdropFilter: 'blur(10px)',
-                  position: 'relative',
-                }}>
-                  {contextBadge(message.contextType)}
-                  
-                  <div style={{ marginTop: '4px' }}>
-                    <ReactMarkdown 
-                      components={{
-                        strong: ({children}) => <strong style={{color: '#dc2626'}}>{children}</strong>,
-                        em: ({children}) => <em style={{fontStyle: 'italic', color: '#a3a3a3'}}>{children}</em>,
-                        code: ({children}) => (
-                          <code style={{
-                            background: 'rgba(220,38,38,0.1)', 
-                            color: '#dc2626', 
-                            padding: '2px 6px', 
-                            borderRadius: '4px',
-                            fontSize: '13px'
-                          }}>{children}</code>
-                        )
-                      }}
-                    >
-                      {message.content}
-                    </ReactMarkdown>
-                  </div>
-
-                  {message.sources && message.sources.length > 0 && (
-                    <div style={{ 
-                      marginTop: '12px', 
-                      paddingTop: '12px', 
-                      borderTop: '1px solid rgba(255,255,255,0.08)',
-                      display: 'flex', 
-                      flexDirection: 'column', 
-                      gap: '6px' 
-                    }}>
-                      <span style={{ 
-                        fontSize: '11px', 
-                        color: '#a3a3a3', 
-                        fontWeight: 500 
-                      }}>
-                        📚 {message.sources.length} fontes acadêmicas
-                      </span>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                        {message.sources.map((source, idx) => (
-                          <a
-                            key={idx}
-                            href={source.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              padding: '4px 8px',
-                              background: 'rgba(220,38,38,0.1)',
-                              border: '1px solid rgba(220,38,38,0.2)',
-                              borderRadius: '6px',
-                              fontSize: '11px',
-                              color: '#dc2626',
-                              textDecoration: 'none',
-                              transition: 'all 0.2s',
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = 'rgba(220,38,38,0.2)';
-                              e.currentTarget.style.transform = 'scale(1.05)';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = 'rgba(220,38,38,0.1)';
-                              e.currentTarget.style.transform = 'scale(1)';
-                            }}
-                          >
-                            {sourceIcon(source.type)}
-                            <span style={{ fontWeight: 500 }}>{source.citation}</span>
-                            <ExternalLink size={10} />
-                          </a>
-                        ))}
+        <main className="flex-1 overflow-y-auto chat-scrollbar relative scroll-smooth px-4 bg-gradient-to-b from-transparent to-black/20">
+          {!messages.length ? (
+            <div className="flex flex-col items-center justify-center h-full text-center">
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-8 opacity-80 scale-90 drop-shadow-2xl">
+                <NeuralOrb isActive={audioAnalyzer.isActive} volume={audioAnalyzer.volume} frequency={audioAnalyzer.frequency} isProcessing={audioAnalyzer.isProcessing} size="md" />
+              </motion.div>
+              <h2 className="text-3xl font-semibold tracking-tight text-white/90">Psicologia AI</h2>
+              <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-muted-foreground/40 mt-3 italic">
+                Diga "pesquise [tema]" para fontes | Conversa natural por padrão
+              </p>
+            </div>
+          ) : (
+            <div className="max-w-3xl mx-auto w-full py-10 space-y-8">
+              <AnimatePresence mode="popLayout">
+                {messages.map((msg) => (
+                  <motion.div key={msg.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`flex gap-4 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
+                    {msg.role === "assistant" && (
+                      <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center border border-primary/20 shrink-0 shadow-[0_0_15px_rgba(var(--primary),0.1)]">
+                        <Zap size={14} className="text-primary animate-pulse" />
+                      </div>
+                    )}
+                   <div className={`flex-1 max-w-[80%] space-y-2 ${msg.role === "user" ? "text-right" : ""}`}>
+                      <div className={`inline-block p-4 rounded-2xl text-sm leading-relaxed shadow-sm ${
+                        msg.role === "user" 
+                          ? "bg-primary text-primary-foreground rounded-tr-none" 
+                          : "bg-white/5 border border-white/10 text-white/90 rounded-tl-none backdrop-blur-md"
+                      }`}>
+                        <ReactMarkdown className="prose prose-invert prose-sm max-w-none">
+                          {msg.content}
+                        </ReactMarkdown>
                       </div>
+
+                      {/* EXIBIÇÃO DE FONTES/FONTES ACADÊMICAS */}
+                      {msg.sources && msg.sources.length > 0 && (
+                        <div className="mt-4 space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                          <p className="text-[10px] font-mono text-primary/60 uppercase tracking-widest flex items-center gap-2">
+                            <Search size={10} /> Embasamento Científico Encontrado:
+                          </p>
+                          <div className="grid grid-cols-1 gap-2">
+                            {msg.sources.map((source, idx) => (
+                              <a 
+                                key={idx} 
+                                href={source.url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="flex items-start gap-2 p-2.5 rounded-lg bg-white/5 hover:bg-primary/10 border border-white/5 text-xs group transition-all duration-200 hover:shadow-lg hover:scale-[1.02]"
+                              >
+                                <div className="w-6 h-6 mt-0.5 flex-shrink-0 rounded-sm flex items-center justify-center text-xs font-bold bg-primary/20 border border-primary/30">
+                                  {source.type === 'wikipedia' ? <Globe size={11} className="text-blue-400" /> : <BookOpen size={11} className="text-green-400" />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-semibold text-white truncate group-hover:underline">{source.title}</p>
+                                  <p className="text-white/70 text-[10px] leading-tight truncate mt-0.5">{source.snippet}</p>
+                                </div>
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {msg.role === 'assistant' && (
+                        <button 
+                          onClick={() => exportarParaPDF(msg.content, msg.sources)} 
+                          className="mt-4 flex items-center gap-2 text-[10px] bg-white/5 hover:bg-primary/20 p-2.5 rounded-lg border border-white/10 transition-all duration-200 uppercase font-bold tracking-wider hover:scale-105 shadow-lg hover:shadow-primary/20"
+                        >
+                          <FileText size={12} /> Gerar Relatório PDF
+                        </button>
+                      )}
                     </div>
-                  )}
-
-                  <div style={{ 
-                    marginTop: '8px', 
-                    fontSize: '10px', 
-                    color: '#525252',
-                    opacity: 0.7 
-                  }}>
-                    {message.timestamp.toLocaleTimeString('pt-BR', { 
-                      hour: '2-digit', 
-                      minute: '2-digit' 
-                    })}
-                    {message.researchQuery && (
-                      <>
-                        {' • '}
-                        <span style={{ color: '#a3a3a3' }}>
-                          🔍 {message.researchQuery.slice(0, 40)}{message.researchQuery.length > 40 ? '...' : ''}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-            
-            {/* Typing Indicator */}
-            <AnimatePresence>
-              {isTyping && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                >
-                  <TypingIndicator />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </AnimatePresence>
-
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input Area */}
-        <div style={{
-          padding: '20px 20px 20px',
-          borderTop: '1px solid rgba(255,255,255,0.06)',
-          background: 'rgba(0,0,0,0.3)',
-        }}>
-          <div style={{
-            display: 'flex', alignItems: 'flex-end', gap: '12px',
-            maxWidth: '100%', position: 'relative',
-          }}>
-            {showVoiceOrb && (
-              <div style={{ position: 'absolute', left: '-60px', top: '50%', transform: 'translateY(-50%)' }}>
-                <NeuralOrb 
-                  isActive={audioAnalyzer.isActive} 
-                  volume={audioAnalyzer.volume} 
-                  frequency={audioAnalyzer.frequency}
-                  isProcessing={isTyping}
-                />
-              </div>
-            )}
-            
-            <button
-              onClick={toggleVoice}
-              style={{
-                padding: '12px',
-                borderRadius: '12px',
-                background: showVoiceOrb ? 'rgba(220,38,38,0.15)' : 'rgba(255,255,255,0.05)',
-                border: showVoiceOrb ? '1px solid rgba(220,38,38,0.3)' : '1px solid rgba(255,255,255,0.1)',
-                color: showVoiceOrb ? '#dc2626' : '#737373',
-                cursor: 'pointer',
-                flexShrink: 0,
-                transition: 'all 0.2s',
-              }}
-            >
-              {audioAnalyzer.isActive ? <MicOff size={20} /> : <Mic size={20} />}
-            </button>
-
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Digite sua mensagem... (Enter para enviar, Shift+Enter para nova linha)"
-              style={{
-                flex: 1,
-                minHeight: '44px',
-                maxHeight: '120px',
-                padding: '12px 16px',
-                borderRadius: '24px',
-                border: '1px solid rgba(255,255,255,0.1)',
-                background: 'rgba(255,255,255,0.03)',
-                color: '#e5e5e5',
-                fontSize: '14px',
-                fontFamily: 'inherit',
-                resize: 'none',
-                outline: 'none',
-                backdropFilter: 'blur(10px)',
-              }}
-              rows={1}
-            />
-
-            <button
-              onClick={handleSend}
-              disabled={!input.trim() || isTyping}
-              style={{
-                padding: '12px',
-                borderRadius: '12px',
-                background: input.trim() && !isTyping 
-                  ? 'linear-gradient(135deg, #dc2626, #b91c1c)' 
-                  : 'rgba(255,255,255,0.05)',
-                border: input.trim() && !isTyping 
-                  ? '1px solid rgba(220,38,38,0.3)' 
-                  : '1px solid rgba(255,255,255,0.1)',
-                color: input.trim() && !isTyping ? '#ffffff' : '#737373',
-                cursor: input.trim() && !isTyping ? 'pointer' : 'not-allowed',
-                flexShrink: 0,
-                transition: 'all 0.2s',
-                minWidth: '44px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {isTyping ? (
-                <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', color: 'white' }} />
-              ) : (
-                <Send size={18} />
-              )}
-            </button>
-          </div>
-
-          {isResearching && researchQuery && (
-            <ResearchStatus 
-              isResearching={true} 
-              query={researchQuery} 
-              sourcesCount={0} 
-            />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+              {isTyping && <div className="flex gap-4 mb-8"><div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center"><div className="w-2 h-2 rounded-full bg-primary animate-pulse" /></div><TypingIndicator /></div>}
+              <div ref={messagesEndRef} />
+            </div>
           )}
-        </div>
+        </main>
+
+        <footer className="p-6 bg-gradient-to-t from-background to-transparent relative">
+          <div className="max-w-3xl mx-auto relative h-auto">
+            <div className="relative z-10 flex items-end gap-2 bg-black/80 border border-white/10 rounded-[1.5rem] p-2.5 transition-all duration-300 backdrop-blur-[40px] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+              <button onClick={toggleVoice} className={`p-2.5 rounded-xl transition-all ${audioAnalyzer.isActive ? "bg-primary text-primary-foreground shadow-[0_0_15px_rgba(var(--primary),0.5)]" : "text-muted-foreground hover:bg-white/5"}`}>
+                {audioAnalyzer.isActive ? <MicOff size={18} /> : <Mic size={18} />}
+              </button>
+              
+              <textarea 
+                ref={textareaRef} 
+                value={input} 
+                onChange={(e) => setInput(e.target.value)} 
+                onKeyDown={handleKeyDown} 
+                placeholder={userId ? "Injete um comando..." : "Digite seu nome para iniciar..."} 
+                rows={1} 
+                style={{ border: 'none', boxShadow: 'none', outline: 'none', background: 'transparent' }}
+                className="flex-1 bg-transparent border-0 focus:border-0 focus:ring-0 focus:outline-none resize-none text-sm py-2.5 placeholder:text-muted-foreground/30 font-sans chat-scrollbar overflow-y-auto text-white selection:bg-primary/40" 
+              />
+              
+              <button onClick={handleSend} disabled={!input.trim() || isTyping} className="p-2.5 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 shadow-lg active:scale-95 transition-all group hover:shadow-[0_0_20px_rgba(var(--primary),0.4)]">
+                {isTyping ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} className="group-hover:translate-x-0.5 transition-transform" />}
+              </button>
+            </div>
+            <p className="text-center text-[8px] text-muted-foreground/20 mt-4 font-mono uppercase tracking-[0.5em] animate-pulse">Neural Lab // Protocol 6.0 // ArXiv + Wikipedia</p>
+          </div>
+        </footer>
       </div>
+
+      <AnimatePresence>
+        {showVoiceOrb && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-3xl flex flex-col items-center justify-center">
+            <NeuralOrb isActive={audioAnalyzer.isActive} volume={audioAnalyzer.volume} frequency={audioAnalyzer.frequency} isProcessing={audioAnalyzer.isProcessing} />
+            <button onClick={toggleVoice} className="mt-12 p-5 rounded-full bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive hover:text-white transition-all shadow-[0_0_30px_rgba(var(--destructive),0.2)]"><MicOff size={24} /></button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
-                
