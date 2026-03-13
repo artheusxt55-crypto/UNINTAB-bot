@@ -1,4 +1,4 @@
-Aqui está o código completo e corrigido, sem nenhum erro de sintaxe ou problema:
+
 
 ```tsx
 import { useState, useRef, useEffect, KeyboardEvent } from "react";
