@@ -809,7 +809,6 @@ SUGESTÕES UNINTA:
     )}
     
     {messages.map((message) => (
-      // 👇 COLE TODO O SEU CÓDIGO AQUI - está perfeito!
       <motion.div
         key={message.id}
         initial={{ opacity: 0, y: 20 }}
@@ -890,11 +889,11 @@ SUGESTÕES UNINTA:
                       textDecoration: 'none',
                       transition: 'all 0.2s',
                     }}
-                    onMouseEnter={e => {
+                    onMouseEnter={(e) => {
                       e.currentTarget.style.background = 'rgba(220,38,38,0.2)';
                       e.currentTarget.style.transform = 'scale(1.05)';
                     }}
-                    onMouseLeave={e => {
+                    onMouseLeave={(e) => {
                       e.currentTarget.style.background = 'rgba(220,38,38,0.1)';
                       e.currentTarget.style.transform = 'scale(1)';
                     }}
