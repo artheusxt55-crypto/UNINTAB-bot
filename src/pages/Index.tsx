@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, KeyboardEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Mic, MicOff, Plus, Menu, Loader2, Zap, FileText } from "lucide-react";
+import { Send, Mic, MicOff, Plus, Menu, Loader2, Zap, FileText, Search, BookOpen, Globe } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import NeuralOrb from "@/components/NeuralOrb";
 import { useAudioAnalyzer } from "@/hooks/useAudioAnalyzer";
@@ -13,6 +13,12 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  sources?: Array<{
+    type: 'wikipedia' | 'scientific';
+    title: string;
+    url: string;
+    snippet: string;
+  }>;
 }
 
 interface Conversation {
@@ -20,6 +26,26 @@ interface Conversation {
   title: string;
   messages: Message[];
   createdAt: Date;
+}
+
+interface WikipediaResponse {
+  query: {
+    search: Array<{
+      title: string;
+      snippet: string;
+      pageid: number;
+    }>;
+  };
+}
+
+interface ArxivResponse {
+  feed: {
+    entry: Array<{
+      title: string;
+      link: Array<{ href: string; title?: string }>;
+      summary: string;
+    }>;
+  };
 }
 
 function TypingIndicator() {
@@ -46,19 +72,98 @@ export default function Index() {
   const [isTyping, setIsTyping] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showVoiceOrb, setShowVoiceOrb] = useState(false);
-  const [userId, setUserId] = useState<string>(""); 
+  const [userId, setUserId] = useState<string>("");
+  const [searchCache, setSearchCache] = useState<Map<string, any>>(new Map());
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const audioAnalyzer = useAudioAnalyzer();
 
-  // --- FUNÇÕES ADICIONADAS (LÓGICA DE PERSISTÊNCIA E PDF) ---
+  // Limpeza de cache a cada 10min
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSearchCache(new Map());
+    }, 600000);
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     const savedId = localStorage.getItem('untbot_last_id');
     if (savedId) setUserId(savedId);
   }, []);
 
-  const exportarParaPDF = (texto: string) => {
+  // Debounce para userId
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (input.trim() && !userId && input.toLowerCase().match(/^[a-zA-Z0-9_]+$/)) {
+        setUserId(input.toLowerCase());
+        localStorage.setItem('untbot_last_id', input.toLowerCase());
+      }
+    }, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [input, userId]);
+
+  const fetchWikipedia = async (query: string): Promise<any[]> => {
+    try {
+      const cached = searchCache.get(`wiki_${query}`);
+      if (cached) return cached;
+      
+      const response = await fetch(
+        `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=3&origin=*`
+      );
+      const data: WikipediaResponse = await response.json();
+      const results = data.query.search.slice(0, 3).map((item: any) => ({
+        type: 'wikipedia' as const,
+        title: item.title,
+        url: `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`,
+        snippet: item.snippet.replace(/<[^>]*>/g, '').substring(0, 150) + '...'
+      }));
+      
+      setSearchCache(prev => new Map(prev).set(`wiki_${query}`, results));
+      return results;
+    } catch (error) {
+      console.error('Wikipedia API error:', error);
+      return [];
+    }
+  };
+
+  const fetchArxiv = async (query: string): Promise<any[]> => {
+    try {
+      const cached = searchCache.get(`arxiv_${query}`);
+      if (cached) return cached;
+      
+      const response = await fetch(
+        `http://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&start=0&max_results=3&sortBy=submittedDate&sortOrder=descending`
+      );
+      const data: ArxivResponse = await response.json();
+      
+      const results = data.feed.entry.slice(0, 3).map((entry: any) => {
+        const pdfLink = entry.link.find((link: any) => link.title === 'pdf');
+        return {
+          type: 'scientific' as const,
+          title: entry.title,
+          url: pdfLink?.href || entry.link[0].href,
+          snippet: entry.summary.replace(/<[^>]*>/g, '').substring(0, 150) + '...'
+        };
+      });
+      
+      setSearchCache(prev => new Map(prev).set(`arxiv_${query}`, results));
+      return results;
+    } catch (error) {
+      console.error('ArXiv API error:', error);
+      return [];
+    }
+  };
+
+  const searchSources = async (query: string): Promise<any[]> => {
+    const [wikiResults, arxivResults] = await Promise.all([
+      fetchWikipedia(query),
+      fetchArxiv(query)
+    ]);
+    return [...wikiResults, ...arxivResults];
+  };
+
+  const exportarParaPDF = (texto: string, sources?: Message['sources']) => {
     const doc = new jsPDF();
     doc.setFillColor(227, 6, 19);
     doc.rect(0, 0, 210, 25, 'F');
@@ -69,11 +174,37 @@ export default function Index() {
     doc.text(`ID: ${userId.toUpperCase()} | DATA: ${new Date().toLocaleDateString()}`, 140, 16);
     doc.setTextColor(50, 50, 50);
     doc.setFontSize(11);
-    const splitText = doc.splitTextToSize(texto.replace(/[*#]/g, ''), 180);
-    doc.text(splitText, 15, 40);
-    doc.save(`sinapse_${userId || 'lab'}_${Date.now()}.pdf`);
+    
+    let yPosition = 40;
+    const cleanText = texto.replace(/[*#]/g, '');
+    const splitText = doc.splitTextToSize(cleanText, 180);
+    doc.text(splitText, 15, yPosition);
+    yPosition += (splitText.length * 5) + 15;
+
+    if (sources && sources.length > 0) {
+      doc.setFontSize(10);
+      doc.setTextColor(100, 100, 100);
+      doc.text("🔍 FONTES ACADÊMICAS CONSULTADAS:", 15, yPosition);
+      yPosition += 10;
+      
+      sources.forEach((source) => {
+        if (yPosition > 270) {
+          doc.addPage();
+          yPosition = 20;
+        }
+        const icon = source.type === 'wikipedia' ? '📖' : '🔬';
+        const titleLine = `${icon} ${source.title.substring(0, 60)}${source.title.length > 60 ? '...' : ''}`;
+        doc.text(titleLine, 15, yPosition);
+        doc.setFontSize(8);
+        const urlLine = source.url.replace('http://', '').replace('https://', '').substring(0, 80);
+        doc.text(urlLine, 15, yPosition + 4);
+        doc.setFontSize(10);
+        yPosition += 14;
+      });
+    }
+    
+    doc.save(`sinapse_neural_${userId || 'lab'}_${Date.now()}.pdf`);
   };
-  // -------------------------------------------------------
 
   const activeConversation = conversations.find((c) => c.id === activeConvId) || conversations[0];
   const messages = activeConversation.messages;
@@ -89,8 +220,14 @@ export default function Index() {
     }
   }, [input]);
 
-  const addMessage = (role: "user" | "assistant", content: string) => {
-    const msg: Message = { id: Date.now().toString() + Math.random(), role, content, timestamp: new Date() };
+  const addMessage = (role: "user" | "assistant", content: string, sources?: Message['sources']) => {
+    const msg: Message = { 
+      id: Date.now().toString() + Math.random(), 
+      role, 
+      content, 
+      timestamp: new Date(),
+      sources 
+    };
     setConversations((prev) =>
       prev.map((c) => {
         if (c.id !== activeConvId) return c;
@@ -107,27 +244,56 @@ export default function Index() {
     if (!input.trim() || isTyping) return;
     const userMsg = input.trim();
 
-    // Lógica de Identificação sem quebrar o fluxo
-    if (!userId) {
-      setUserId(userMsg.toLowerCase());
-      localStorage.setItem('untbot_last_id', userMsg.toLowerCase());
-    }
-
     addMessage("user", userMsg);
     setInput("");
     setIsTyping(true);
 
     try {
+      // Indicador de pesquisa
+      addMessage("assistant", "🔍 Pesquisando Wikipedia + ArXiv...", []);
+
+      const sources = await searchSources(userMsg);
+      
       const idParaBusca = userId || userMsg.toLowerCase();
       const historico = await buscarDoRedis(idParaBusca);
-      const contexto = `Você é a Aura AI do Lab Neuro-UNINTA. Mestre: Matheus. Operador: ${idParaBusca}. Histórico: ${historico.join(" | ")}`;
+      
+      const fonteTexto = sources.length > 0 
+        ? `\n\n**🔍 Fontes encontradas (${sources.length}):**\n${sources.map(s => `• ${s.title.substring(0, 50)}... (${s.type})`).join('\n')}`
+        : '\n\n*Nenhuma fonte acadêmica encontrada para esta query*';
+      
+      const contexto = `Aura AI - Lab Neuro-UNINTA | Mestre: Matheus | Operador: ${idParaBusca}
+      
+Histórico: ${historico.slice(-3).join(" | ")}
+      
+${fonteTexto}
+
+INSTRUÇÕES: Use as fontes acima para responder com precisão acadêmica. Cite as fontes naturalmente na resposta.`;
+
       const resposta = await analisarComGroq(userMsg, contexto);
       
-      await salvarNoRedis(idParaBusca, `U: ${userMsg} | B: ${resposta}`);
-      addMessage("assistant", resposta);
+      // Remove mensagem de loading e adiciona resposta final
+      setConversations(prev => 
+        prev.map(c => 
+          c.id === activeConvId 
+            ? { 
+                ...c, 
+                messages: c.messages.slice(0, -1).concat({
+                  id: Date.now().toString(),
+                  role: 'assistant' as const,
+                  content: resposta,
+                  timestamp: new Date(),
+                  sources
+                })
+              }
+            : c
+        )
+      );
+      
+      await salvarNoRedis(idParaBusca, `U: ${userMsg} | B: ${resposta} | S: ${JSON.stringify(sources)}`);
       falarTexto(resposta);
     } catch (error) {
-      addMessage("assistant", "⚠️ Erro de conexão neural.");
+      console.error('Erro na comunicação:', error);
+      addMessage("assistant", "⚠️ Erro de conexão neural. Verifique sua internet.\n\n💡 **Dica:** Perguntas específicas funcionam melhor com Wikipedia + ArXiv!");
     } finally {
       setIsTyping(false);
     }
@@ -191,7 +357,7 @@ export default function Index() {
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary shadow-[0_0_8px_rgba(var(--primary),0.8)]"></span>
             </div>
             <h1 className="text-xs font-bold font-mono tracking-[0.2em] text-primary uppercase text-glow">
-                UNINTA // {userId || "AGUARDANDO_ID"}
+              UNINTA // {userId ? `${userId.toUpperCase()} 🔬` : "AGUARDANDO_ID"}
             </h1>
           </div>
           <button onClick={() => {
@@ -208,7 +374,9 @@ export default function Index() {
                 <NeuralOrb isActive={audioAnalyzer.isActive} volume={audioAnalyzer.volume} frequency={audioAnalyzer.frequency} isProcessing={audioAnalyzer.isProcessing} size="md" />
               </motion.div>
               <h2 className="text-3xl font-semibold tracking-tight text-white/90">Como posso ajudar?</h2>
-              <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-muted-foreground/40 mt-3 italic">Lab Neuro-UNINTA // Assistant Online</p>
+              <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-muted-foreground/40 mt-3 italic">
+                Lab Neuro-UNINTA // Wikipedia + ArXiv Integrado // Assistant Online
+              </p>
             </div>
           ) : (
             <div className="max-w-3xl mx-auto w-full py-10 space-y-8">
@@ -223,62 +391,16 @@ export default function Index() {
                     <div className={`p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed backdrop-blur-md border shadow-2xl ${msg.role === "user" ? "bg-primary/90 text-primary-foreground border-primary/20" : "bg-white/5 border-white/10 text-white/90"}`}>
                       <ReactMarkdown className="prose prose-invert prose-sm max-w-none">{msg.content}</ReactMarkdown>
                       
-                      {/* BOTÃO PDF INTEGRADO SEM QUEBRAR O LAYOUT */}
-                      {msg.role === 'assistant' && (
-                        <button 
-                          onClick={() => exportarParaPDF(msg.content)} 
-                          className="mt-3 flex items-center gap-2 text-[10px] bg-white/5 hover:bg-primary/20 p-2 rounded border border-white/10 transition-all uppercase font-bold tracking-tighter"
-                        >
-                          <FileText size={12} /> Gerar Relatório PDF
-                        </button>
-                      )}
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-              {isTyping && <div className="flex gap-4 mb-8"><div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center"><div className="w-2 h-2 rounded-full bg-primary animate-pulse" /></div><TypingIndicator /></div>}
-              <div ref={messagesEndRef} />
-            </div>
-          )}
-        </main>
-
-        <footer className="p-6 bg-gradient-to-t from-background to-transparent relative">
-          <div className="max-w-3xl mx-auto relative h-auto">
-            <div className="relative z-10 flex items-end gap-2 bg-black/80 border border-white/10 rounded-[1.5rem] p-2.5 transition-all duration-300 backdrop-blur-[40px] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
-              <button onClick={toggleVoice} className={`p-2.5 rounded-xl transition-all ${audioAnalyzer.isActive ? "bg-primary text-primary-foreground shadow-[0_0_15px_rgba(var(--primary),0.5)]" : "text-muted-foreground hover:bg-white/5"}`}>
-                {audioAnalyzer.isActive ? <MicOff size={18} /> : <Mic size={18} />}
-              </button>
-              
-              <textarea 
-                ref={textareaRef} 
-                value={input} 
-                onChange={(e) => setInput(e.target.value)} 
-                onKeyDown={handleKeyDown} 
-                placeholder={userId ? "Injete um comando..." : "Digite seu nome para iniciar..."} 
-                rows={1} 
-                autoComplete="off"
-                spellCheck="false"
-                style={{ border: 'none', boxShadow: 'none', outline: 'none', background: 'transparent' }}
-                className="flex-1 bg-transparent border-0 focus:border-0 focus:ring-0 focus:outline-none resize-none text-sm py-2.5 placeholder:text-muted-foreground/30 font-sans chat-scrollbar overflow-y-auto shadow-none outline-none appearance-none text-white selection:bg-primary/40" 
-              />
-              
-              <button onClick={handleSend} disabled={!input.trim() || isTyping} className="p-2.5 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 shadow-lg active:scale-95 transition-all group hover:shadow-[0_0_20px_rgba(var(--primary),0.4)]">
-                {isTyping ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} className="group-hover:translate-x-0.5 transition-transform" />}
-              </button>
-            </div>
-            <p className="text-center text-[8px] text-muted-foreground/20 mt-4 font-mono uppercase tracking-[0.5em] animate-pulse">Neural Lab // Protocol 6.0</p>
-          </div>
-        </footer>
-      </div>
-
-      <AnimatePresence>
-        {showVoiceOrb && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-3xl flex flex-col items-center justify-center">
-            <NeuralOrb isActive={audioAnalyzer.isActive} volume={audioAnalyzer.volume} frequency={audioAnalyzer.frequency} isProcessing={audioAnalyzer.isProcessing} />
-            <button onClick={toggleVoice} className="mt-12 p-5 rounded-full bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive hover:text-white transition-all shadow-[0_0_30px_rgba(var(--destructive),0.2)]"><MicOff size={24} /></button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
+                      {/* MOSTRAR FONTES ENCONTRADAS */}
+                      {msg.sources && msg.sources.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-white/10">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-primary/80 mb-3 flex items-center gap-1">
+                            <Search size={12} /> Fontes Acadêmicas ({msg.sources.length})
+                          </h4>
+                          <div className="space-y-2 max-h-32 overflow-y-auto chat-scrollbar">
+                            {msg.sources.map((source, i) => (
+                              <a 
+                                key={i}
+                                href={source.url}
+                                target="_blank"
+                               
