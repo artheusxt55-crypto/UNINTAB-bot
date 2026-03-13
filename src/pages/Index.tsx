@@ -1,4 +1,3 @@
-Aqui está o código **super melhorado** com múltiplas fontes de pesquisa, detecção inteligente de contexto e IA muito mais avançada:
 
 ```tsx
 import { useState, useRef, useEffect, KeyboardEvent } from "react";
