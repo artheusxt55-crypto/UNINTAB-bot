@@ -1,3 +1,5 @@
+
+```tsx
 import { useState, useRef, useEffect, KeyboardEvent, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -387,11 +389,8 @@ const fetchScielo = async (query: string, searchCache: Map<string, Source[]>, se
     setSearchCache(prev => new Map(prev).set(cacheKey, results));
     return results;
   } catch (error) {
-    console.error('SciELO error:', error);
-    return
-    tsx
-
-Copy code
+    console.error('SciELO error:',
+    ```tsx
   } catch (error) {
     console.error('SciELO error:', error);
     return [];
@@ -824,11 +823,7 @@ SUGESTÕES UNINTA:
               >
                 <div style={{
                   padding: '12px 16px',
-                  borderRadius:
-                    tsx
-
-Copy code
-                  borderRadius: '16px',
+                                  borderRadius: '16px',
                   background: message.role === 'user' 
                     ? 'linear-gradient(135deg, rgba(220,38,38,0.15) 0%, rgba(127,29,29,0.2) 100%)'
                     : 'rgba(255,255,255,0.03)',
@@ -1057,3 +1052,4 @@ Copy code
     </div>
   );
 }
+                
