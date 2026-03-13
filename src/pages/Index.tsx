@@ -414,4 +414,4 @@ Pergunta: ${userMsg}`;
                         <Zap size={14} className="text-primary animate-pulse" />
                       </div>
                     )}
-                   resuma esse codigo pra mim dizendo o que ele tem de interessante
+                 
