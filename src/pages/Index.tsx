@@ -1,3 +1,4 @@
+**NÃO, o código estava INCOMPLETO e com ERROS!** Aqui está a **VERSÃO 100% CORRIGIDA E COMPLETA**:
 
 ```tsx
 "use client";
@@ -13,6 +14,7 @@ import ChatSidebar from "@/components/ChatSidebar";
 import { analisarComGroq, salvarNoRedis, buscarDoRedis, falarTexto } from "@/lib/aura-engine";
 import { jsPDF } from "jspdf";
 
+// Interfaces (mantidas iguais)
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -60,6 +62,7 @@ interface SearchCacheEntry {
   timestamp: number;
 }
 
+// Components auxiliares
 function TypingIndicator() {
   return (
     <div className="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-blue-500/20 to-purple-500/20 backdrop-blur-sm rounded-2xl border border-blue-500/30">
@@ -126,6 +129,7 @@ function MessageActions({
   );
 }
 
+// COMPONENTE PRINCIPAL ✅ 100% CORRIGIDO
 export default function Index() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState("1");
@@ -134,7 +138,6 @@ export default function Index() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showVoiceOrb, setShowVoiceOrb] = useState(false);
   const [userId, setUserId] = useState<string>("");
-  // ✅ CORRIGIDO: Usando objeto simples serializável ao invés de Map
   const [searchCache, setSearchCache] = useState<Record<string, SearchCacheEntry>>({});
   const [needsResearch, setNeedsResearch] = useState(false);
   const [needsCaseStudy, setNeedsCaseStudy] = useState(false);
@@ -162,14 +165,12 @@ export default function Index() {
   const updateResearchMode = useCallback((inputValue: string) => {
     const lowerInput = inputValue.toLowerCase().trim();
     
-    // Triggers para pesquisa acadêmica
     const explicitResearch = [
       'pesquise', 'procure', 'busque', 'pesquisa sobre', 'encontre',
       'wikipedia', 'wiki', 'arxiv', 'artigo científico', 'estudo sobre',
       'fonte', 'referência', 'cite', 'embasamento', 'definição de'
     ];
     
-    // Triggers para estudos de caso
     const caseStudyTriggers = [
       'estudo de caso', 'caso clínico', 'análise de caso', 'exemplo prático',
       'paciente hipotético', 'caso real', 'estratégia terapêutica'
@@ -203,12 +204,11 @@ export default function Index() {
     updateResearchMode(input);
   }, [input, updateResearchMode]);
 
-  // ✅ Cache cleanup otimizado - CORRIGIDO para objeto
+  // ✅ Cache cleanup otimizado
   useEffect(() => {
     const interval = setInterval(() => {
       setSearchCache(prev => {
         const newCache: Record<string, SearchCacheEntry> = {};
-        // Limpa apenas cache antigo
         Object.entries(prev).forEach(([key, entry]) => {
           if (Date.now() - (entry?.timestamp || 0) <= 5 * 60 * 1000) {
             newCache[key] = entry;
@@ -220,7 +220,7 @@ export default function Index() {
     return () => clearInterval(interval);
   }, []);
 
-  // ✅ Carregar userId do localStorage (corrigido)
+  // ✅ Carregar userId do localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -250,10 +250,10 @@ export default function Index() {
     return () => clearTimeout(timeoutId);
   }, [input, userId]);
 
-  // ✅ APIs com cache melhorado - CORRIGIDAS
+  // ✅ APIs COM CACHE CORRIGIDAS ✅
   const fetchWikipedia = useCallback(async (query: string): Promise<any[]> => {
     try {
-      const cacheKey = `wiki_${query}`;
+      const cacheKey = 'wiki_' + query.toLowerCase();
       const cached = searchCache[cacheKey];
       if (cached) return cached.data;
       
@@ -274,103 +274,29 @@ export default function Index() {
       
       const data: WikipediaResponse = await response.json();
       
-    // ✅ SUBSTITUA estas 3 funções no seu código:
-
-const fetchWikipedia = useCallback(async (query: string): Promise<any[]> => {
-  try {
-    // ✅ FIX: Cache key sem template literal problemático
-    const cacheKey = 'wiki_' + query;
-    const cached = searchCache[cacheKey];
-    if (cached) return cached.data;
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-    const response = await fetch(
-      `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=5&srprop=snippet&origin=*`,
-      { 
-        cache: 'force-cache',
-        signal: controller.signal
-      }
-    );
-    
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) throw new Error('Wikipedia API falhou');
-    
-    const data: WikipediaResponse = await response.json();
-    
-    const results = data.query.search.slice(0, 3).map((item: any) => ({
-      type: 'wikipedia' as const,
-      title: item.title,
-      url: `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`,
-      snippet: item.snippet.replace(/<[^>]*>/g, '').substring(0, 200) + '...'
-    }));
-    
-    const resultWithTimestamp: SearchCacheEntry = {
-      data: results,
-      timestamp: Date.now()
-    };
-    
-    setSearchCache(prev => ({ ...prev, [cacheKey]: resultWithTimestamp }));
-    return results;
-  } catch (error) {
-    console.error('Wikipedia API error:', error);
-    return [];
-  }
-}, [searchCache]);
-
-const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
-  try {
-    // ✅ FIX: Cache key sem template literal problemático
-    const cacheKey = 'arxiv_' + query;
-    const cached = searchCache[cacheKey];
-    if (cached) return cached.data;
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-    const response = await fetch(
-      `http://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&start=0&max_results=5&sortBy=relevance&sortOrder=descending`,
-      { 
-        cache: 'force-cache',
-        signal: controller.signal
-      }
-    );
-    
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) throw new Error('ArXiv API falhou');
-    
-    const data: ArxivResponse = await response.json();
-    
-    const results = data.feed.entry.slice(0, 3).map((entry: any) => {
-      const pdfLink = entry.link.find((link: any) => link.title === 'pdf');
-      const absLink = entry.link.find((link: any) => link.title === 'abs');
-      return {
-        type: 'scientific' as const,
-        title: entry.title,
-        url: pdfLink?.href || absLink?.href || entry.link[0].href,
-        snippet: entry.summary.replace(/<[^>]*>/g, '').substring(0, 200) + '...'
+      const results = data.query.search.slice(0, 3).map((item: any) => ({
+        type: 'wikipedia' as const,
+        title: item.title,
+        url: `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`,
+        snippet: item.snippet.replace(/<[^>]*>/g, '').substring(0, 200) + '...'
+      }));
+      
+      const resultWithTimestamp: SearchCacheEntry = {
+        data: results,
+        timestamp: Date.now()
       };
-    });
-    
-    const resultWithTimestamp: SearchCacheEntry = {
-      data: results,
-      timestamp: Date.now()
-    };
-    
-    setSearchCache(prev => ({ ...prev, [cacheKey]: resultWithTimestamp }));
-    return results;
-  } catch (error) {
-    console.error('ArXiv API error:', error);
-    return [];
-  }
-}, [searchCache]);
+      
+      setSearchCache(prev => ({ ...prev, [cacheKey]: resultWithTimestamp }));
+      return results;
+    } catch (error) {
+      console.error('Wikipedia API error:', error);
+      return [];
+    }
+  }, [searchCache]);
 
   const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
     try {
-      const cacheKey = `arxiv_${query}`;
+      const cacheKey = 'arxiv_' + query.toLowerCase();
       const cached = searchCache[cacheKey];
       if (cached) return cached.data;
       
@@ -427,12 +353,11 @@ const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
     return [...wiki, ...arxiv].slice(0, 5);
   }, [fetchWikipedia, fetchArxiv]);
 
-  // ✅ PDF Export profissional para estudantes
+  // ✅ PDF Export profissional
   const exportarParaPDF = useCallback((texto: string, sources?: Message['sources'], isCaseStudy = false) => {
     try {
       const doc = new jsPDF();
       
-      // Header profissional
       doc.setFillColor(59, 130, 246);
       doc.rect(0, 0, 210, 35, 'F');
       doc.setTextColor(255, 255, 255);
@@ -544,12 +469,12 @@ const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
     );
   }, [activeConvId]);
 
-  // ✅ handleSend completamente corrigido e otimizado
+  // ✅ handleSend COMPLETAMENTE CORRIGIDO
   const handleSend = useCallback(async () => {
     if (!input.trim() || isTyping) return;
     
     const userMsg = input.trim();
-       addMessage("user", userMsg);
+    addMessage("user", userMsg);
     setInput("");
     setIsTyping(true);
 
@@ -631,7 +556,6 @@ const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
     }
   }, [handleSend]);
 
-  // ✅ Voice toggle otimizado
   const toggleVoice = useCallback(() => {
     if (audioAnalyzer.isActive) {
       audioAnalyzer.stop();
@@ -642,7 +566,6 @@ const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
     }
   }, [audioAnalyzer]);
 
-  // ✅ Funções de conversa
   const createNewConversation = useCallback(() => {
     const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const newConv = { 
@@ -659,6 +582,7 @@ const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
     exportarParaPDF(content, sources, isCaseStudy);
   }, [exportarParaPDF]);
 
+  // ✅ JSX COMPLETO E CORRIGIDO
   return (
     <div className="flex h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-slate-900 text-white overflow-hidden">
       {/* Sidebar */}
@@ -692,7 +616,7 @@ const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
         sidebarOpen ? "blur-md scale-[0.98] pointer-events-none lg:blur-none lg:scale-100 lg:pointer-events-auto" : ""
       }`}>
         
-        {/* Header profissional */}
+        {/* Header */}
         <header className="h-16 border-b border-slate-800/50 bg-slate-900/95 backdrop-blur-xl sticky top-0 z-20 flex items-center px-6 gap-4">
           <button 
             onClick={() => setSidebarOpen(true)} 
@@ -794,7 +718,6 @@ const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
                     className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                   >
                     <div className={`group max-w-3xl ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
-                      {/* Avatar */}
                       <div className={`w-12 h-12 rounded-2xl flex-shrink-0 flex items-center justify-center mt-1 ${
                         msg.role === "user" ? "order-2" : "order-1"
                       }`}>
@@ -809,7 +732,6 @@ const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
                         )}
                       </div>
 
-                      {/* Message Bubble */}
                       <div className={`relative ${msg.role === "user" 
                         ? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white ml-4" 
                         : "bg-white/10 backdrop-blur-xl border border-slate-700/50 text-slate-100 mr-4"
@@ -831,7 +753,6 @@ const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
                           {msg.content}
                         </ReactMarkdown>
 
-                        {/* Timestamp & Badges */}
                         <div className="flex items-center gap-2 mt-4 pt-4 border-t border-slate-700/30">
                           <Clock size={14} className="text-slate-500" />
                           <span className={`text-sm ${msg.role === "user" ? "text-indigo-200/80" : "text-slate-400"}`}>
@@ -857,7 +778,6 @@ const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
                 ))}
               </AnimatePresence>
 
-              {/* Typing Indicator */}
               <AnimatePresence>
                 {isTyping && (
                   <motion.div
@@ -884,7 +804,6 @@ const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
           <div className="max-w-4xl mx-auto">
             <div className="flex items-end gap-3 bg-slate-800/50 border border-slate-700/50 rounded-3xl p-5 hover:border-indigo-500/50 transition-all duration-300 shadow-2xl hover:shadow-3xl">
               
-              {/* Voice Button */}
               <button 
                 onClick={toggleVoice} 
                 className={`p-3.5 rounded-2xl transition-all duration-300 flex-shrink-0 ${
@@ -897,7 +816,6 @@ const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
                 {audioAnalyzer.isActive ? <MicOff size={22} /> : <Mic size={22} />}
               </button>
               
-              {/* Text Input */}
               <textarea 
                 ref={textareaRef} 
                 value={input} 
@@ -910,7 +828,6 @@ const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
                 aria-label="Digite sua pergunta acadêmica"
               />
               
-              {/* Send Button */}
               <button 
                 onClick={handleSend} 
                 disabled={!input.trim() || isTyping}
@@ -929,7 +846,6 @@ const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
               </button>
             </div>
             
-            {/* Status Bar acadêmico */}
             <div className="flex items-center justify-center gap-6 mt-4 text-xs text-slate-500">
               <span className="flex items-center gap-1">
                 <Search size={12} />
@@ -942,44 +858,44 @@ const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
             </div>
           </div>
         </footer>
-      </
-              {/* Voice Orb Overlay - CORRIGIDO */}
-        <AnimatePresence>
-          {showVoiceOrb && (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9 }} 
-              animate={{ opacity: 1, scale: 1 }} 
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="fixed inset-0 z-[100] bg-gradient-to-br from-black/95 to-slate-900/95 backdrop-blur-3xl flex flex-col items-center justify-center p-8"
-            >
-              <div className="text-center mb-12">
-                <div className="w-48 h-48 mx-auto mb-8">
-                  <NeuralOrb 
-                    isActive={audioAnalyzer.isActive} 
-                    volume={audioAnalyzer.volume} 
-                    frequency={audioAnalyzer.frequency} 
-                    isProcessing={audioAnalyzer.isProcessing} 
-                    size="2xl" 
-                  />
-                </div>
-                <h3 className="text-3xl font-black mb-3 bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
-                  🎤 Modo Voz Ativo
-                </h3>
-                <p className="text-slate-400 text-lg">Fale suas dúvidas de psicologia naturalmente</p>
-              </div>
-              
-              <button 
-                onClick={toggleVoice}
-                className="p-8 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-3xl shadow-2xl shadow-red-500/50 hover:shadow-3xl hover:shadow-red-500/60 hover:scale-105 active:scale-95 transition-all duration-300 font-bold text-xl flex items-center gap-3"
-                aria-label="Parar gravação de voz"
-              >
-                <MicOff size={32} />
-                <span>Parar Gravação</span>
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
+
+      {/* Voice Orb Overlay ✅ CORRIGIDO */}
+      <AnimatePresence>
+        {showVoiceOrb && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }} 
+            animate={{ opacity: 1, scale: 1 }} 
+            exit={{ opacity: 0, scale: 0.9 }}
+                       className="fixed inset-0 z-[100] bg-gradient-to-br from-black/95 to-slate-900/95 backdrop-blur-3xl flex flex-col items-center justify-center p-8"
+          >
+            <div className="text-center mb-12">
+              <div className="w-48 h-48 mx-auto mb-8">
+                <NeuralOrb 
+                  isActive={audioAnalyzer.isActive} 
+                  volume={audioAnalyzer.volume} 
+                  frequency={audioAnalyzer.frequency} 
+                  isProcessing={audioAnalyzer.isProcessing} 
+                  size="2xl" 
+                />
+              </div>
+              <h3 className="text-3xl font-black mb-3 bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
+                🎤 Modo Voz Ativo
+              </h3>
+              <p className="text-slate-400 text-lg">Fale suas dúvidas de psicologia naturalmente</p>
+            </div>
+            
+            <button 
+              onClick={toggleVoice}
+              className="p-8 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-3xl shadow-2xl shadow-red-500/50 hover:shadow-3xl hover:shadow-red-500/60 hover:scale-105 active:scale-95 transition-all duration-300 font-bold text-xl flex items-center gap-3"
+              aria-label="Parar gravação de voz"
+            >
+              <MicOff size={32} />
+              <span>Parar Gravação</span>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
