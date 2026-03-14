@@ -212,30 +212,6 @@ const handleExportPDF = useCallback((messages: Message[]) => {
     doc.save(`aura-relatorio-${Date.now()}.pdf`);
   }, [userId]);
 
-  // Adicionar mensagem
-  const addMessage = useCallback((role: "user" | "assistant", content: string, isAcademic?: boolean) => {
-    const msg: Message = { 
-      id: Math.random().toString(36).substring(7), 
-      role, 
-      content, 
-      timestamp: new Date(), 
-      isAcademic 
-    };
-    
-    setConversations((prev) =>
-      prev.map((c) =>
-        c.id === activeConvId
-          ? { 
-              ...c, 
-              messages: [...c.messages, msg],
-              title: c.messages.length === 0 && role === "user" 
-                ? content.slice(0, 40) + (content.length > 40 ? "..." : "")
-                : c.title 
-            }
-          : c
-      )
-    );
-  }, [activeConvId]);
 
   // Enviar mensagem
   const handleSend = async () => {
