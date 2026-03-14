@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect, KeyboardEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Mic, MicOff, Plus, Menu, Loader2, Zap, FileText, BookOpen, Link2 } from "lucide-react";
@@ -7,7 +6,7 @@ import remarkGfm from "remark-gfm";
 import NeuralOrb from "@/components/NeuralOrb";
 import { useAudioAnalyzer } from "@/hooks/useAudioAnalyzer";
 import ChatSidebar from "@/components/ChatSidebar";
-import { analisarComGroq, salvarNoRedis, buscarDoRedis, falarTexto } from "@/lib/aura-engine";
+import { salvarNoRedis, buscarDoRedis, falarTexto } from "@/lib/aura-engine";
 import { jsPDF } from "jspdf";
 
 interface Message {
@@ -175,7 +174,7 @@ function SourceCard({ source }: { source: Source }) {
             {source.type === "wikipedia" && "WIKI"}
             {source.type === "scielo" && "SCIELO"}
             {source.type === "pubmed" && "PUBMED"}
-            {source.type === "scholar" && "SCHOLAR"}
+            {source.type === "scholar" && "📚 LIVRO LAB"} {/* ✅ ATUALIZADO */}
           </span>
           <span className="text-xs text-muted-foreground/80 font-mono tracking-tight flex items-center gap-1 group-hover:text-primary/80 transition-colors">
             <Link2 size={10} /> Abrir artigo
@@ -186,7 +185,6 @@ function SourceCard({ source }: { source: Source }) {
   );
 }
 
-// Componente estático para "Como posso ajudar?" - SEM animações que causam conflito
 function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center h-full text-center py-20">
@@ -302,6 +300,7 @@ export default function Index() {
     );
   };
 
+  // ✅ handleSend ATUALIZADO COM NOVA API
   const handleSend = async () => {
     if (!input.trim() || isTyping) return;
     
@@ -326,19 +325,18 @@ export default function Index() {
       const historico = await buscarDoRedis(idParaBusca).catch(() => [] as string[]);
       
       const ePesquisa = detectarPesquisa(userMsg);
-      let resposta = "";
-      let sources: Source[] = [];
+      let webSources: Source[] = []; // Fontes da web
+      let contextualInfo = historico.slice(-5).join(" | ");
 
+      // ✅ MANTER LÓGICA DE DETECÇÃO DE PESQUISA E BUSCAS NA WEB
       if (ePesquisa) {
-        const contexto = `Você é a Aura AI do Lab Neuro-UNINTA em MODO PESQUISA ACADÊMICA. 
+        const contextoPesquisa = `Você é a Aura AI do Lab Neuro-UNINTA em MODO PESQUISA ACADÊMICA. 
         Mestre: Matheus. Operador: ${idParaBusca}. 
-        Histórico: ${historico.slice(-5).join(" | ")}.
+        Histórico: ${contextualInfo}.
         Você encontrou fontes acadêmicas confiáveis. Responda de forma técnica e cite as fontes encontradas.
-        NÃO invente informações. Baseie-se nas fontes reais.
-        CITE AS FONTES NO FINAL DA RESPOSTA usando este formato exato: 
-        📖 [TÍTULO_DA_FONTE] ([TIPO]) -> [URL]
-        Exemplo: 📖 Inteligência Artificial (WIKI) -> https://pt.wikipedia.org/wiki/...`;
+        NÃO invente informações. Baseie-se nas fontes reais.`;
 
+        // Buscar fontes da web (Wikipedia, SciELO, PubMed)
         const [wikiSources, scieloSources, pubmedSources] = await Promise.allSettled([
           buscarWikipedia(userMsg),
           buscarScielo(userMsg),
@@ -346,25 +344,54 @@ export default function Index() {
         ]).then((results) => 
           results.map((result) => 
             result.status === 'fulfilled' ? result.value : []
-          ) as Promise<Source[]>[]
+          ) as Source[][]
         );
-              sources = [...wikiSources, ...scieloSources, ...pubmedSources].flat().slice(0, 5);
         
-        const fontesTexto = sources.map(s => `${s.title} (${s.type.toUpperCase()})`).join('; ');
-        resposta = await analisarComGroq(
-          `${userMsg}\n\nFONTE_INSTRUÇÃO: Cite as seguintes fontes: ${fontesTexto}`,
-          contexto
-        );
+        webSources = [...wikiSources, ...scieloSources, ...pubmedSources].flat().slice(0, 5);
+        contextualInfo = contextoPesquisa;
       } else {
-        const contexto = `Você é a Aura AI do Lab Neuro-UNINTA. Mestre: Matheus. Operador: ${idParaBusca}. Histórico: ${historico.slice(-5).join(" | ")}`;
-        resposta = await analisarComGroq(userMsg, contexto);
+                contextualInfo = `Você é a Aura AI do Lab Neuro-UNINTA. Mestre: Matheus. Operador: ${idParaBusca}. Histórico: ${contextualInfo}`;
       }
+
+      // ✅ NOVA CHAMADA PARA API /api/chat
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: userMsg,
+          contexto: contextualInfo
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erro na API: ${response.status}`);
+      }
+
+      const apiData = await response.json();
+      const resposta = apiData.resposta || apiData.content || "Resposta não encontrada";
+
+      // ✅ COMBINAR FONTES: Web + fontesLab (Supabase)
+      let allSources: Source[] = [...webSources];
       
+      if (apiData.fontesLab && Array.isArray(apiData.fontesLab)) {
+        const labSources: Source[] = apiData.fontesLab.map((labItem: any) => ({
+          title: labItem.title || 'Livro Lab Neuro-UNINTA',
+          url: labItem.url_pdf || '#',
+          type: 'scholar' as const
+        })).slice(0, 5); // Limitar a 5 fontes lab
+        
+        allSources = [...allSources, ...labSources];
+      }
+
+      // ✅ Manter funções existentes
       await salvarNoRedis(idParaBusca, `U: ${userMsg} | B: ${resposta}`).catch(console.error);
-      addMessage("assistant", resposta, sources, ePesquisa);
+      addMessage("assistant", resposta, allSources, ePesquisa);
       
-      // Falar texto com try-catch
+      // Falar texto
       falarTexto(resposta).catch(console.error);
+      
     } catch (error) {
       console.error('Erro na comunicação:', error);
       addMessage("assistant", "⚠️ Erro de conexão neural. Verifique sua conexão e tente novamente.", [], false);
@@ -471,7 +498,6 @@ export default function Index() {
 
         <main className="flex-1 overflow-y-auto chat-scrollbar relative scroll-smooth px-4 bg-gradient-to-b from-transparent to-black/20">
           {!messages.length ? (
-            // Estado vazio ESTÁTICO - sem AnimatePresence/motion que causavam tremor
             <EmptyState />
           ) : (
             <div className="max-w-3xl mx-auto w-full py-10 space-y-8">
@@ -657,4 +683,4 @@ export default function Index() {
       </AnimatePresence>
     </div>
   );
-}  
+}
