@@ -1,15 +1,15 @@
 import { Groq } from "groq-sdk";
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL!,
-  process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY!
-);
+// 1. Conexão com o Supabase (Usando as variáveis do seu print)
+const supabaseUrl = process.env.VITE_SUPABASE_URL || "";
+const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || "";
 
-// 2. Configuração da IA (Groq)
-// Tenta a KEY 1 ou a KEY 2 (ajustado para bater com seu print da Vercel)
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// 2. Configuração da IA (Tenta todas as chaves que você criou na Vercel)
 const groq = new Groq({
-  apiKey: process.env.VITE_GROQ_API_KEY || process.env.VITE_GROQ_API_KEY2 || process.env.GROQ_API_KEY,
+  apiKey: process.env.VITE_GROQ_API_KEY || process.env.VITE_GROQ_API_KEY2 || process.env.VITE_GROQ_API_KEY_2 || ""
 });
 
 export const config = {
@@ -20,26 +20,29 @@ export default async function handler(req: Request) {
   try {
     const { prompt, contexto } = await req.json();
 
-    // 3. BUSCA NOS 195 LIVROS DO LAB
-    // Filtramos o prompt para pegar o termo principal (ex: TDAH, Autismo, USP...)
+    // 3. BUSCA NOS LIVROS (Ajustado para as colunas reais: id, titulo, url_pdf)
+    // Buscamos pelo TÍTULO do livro já que a coluna de texto ainda não foi criada
     const palavras = prompt.split(' ').filter((p: string) => p.length > 3);
     const termoBusca = palavras[0] || prompt;
     
-    const { data: livros } = await supabase
+    const { data: livros, error: dbError } = await supabase
       .from('biblioteca')
-      .select('titulo, conteudo_trecho, url_pdf')
-      .ilike('conteudo_trecho', `%${termoBusca}%`)
-      .limit(2);
+      .select('titulo, url_pdf') 
+      .ilike('titulo', `%${termoBusca}%`)
+      .limit(3);
 
-    // Formatamos o conhecimento técnico para a IA
-    const infoLivros = livros?.length 
-      ? livros.map(l => `[FONTE OFICIAL LAB: ${l.titulo}]: ${l.conteudo_trecho}`).join("\n") 
-      : "Não encontrei trechos específicos nos livros do Lab para este termo, responda com sua base geral.";
+    if (dbError) {
+      console.error("Erro Supabase:", dbError.message);
+    }
 
-    // 4. LÓGICA DE MAPA MENTAL (Preservando seu protocolo original)
+    // Informamos à IA quais livros do Lab batem com a pesquisa do aluno
+    const infoLivros = livros && livros.length > 0 
+      ? `[SISTEMA]: O Lab possui estes livros sobre o tema: ${livros.map(l => l.titulo).join(", ")}. Responda tecnicamente baseando-se neles.`
+      : "Responda com sua base geral de neurociência e psicofarmacologia.";
+
+    // 4. LÓGICA DE MAPA MENTAL (Seu protocolo oficial)
     const pediuMapa = prompt.toLowerCase().includes("mapa mental");
-    
-    let diretrizFinal = `${contexto}\n\nCONHECIMENTO EXTRAÍDO DOS LIVROS DO LAB:\n${infoLivros}`;
+    let diretrizFinal = `${contexto}\n\n${infoLivros}`;
 
     if (pediuMapa) {
       diretrizFinal += `
@@ -63,16 +66,16 @@ export default async function handler(req: Request) {
     const resposta = completion.choices[0]?.message?.content || "";
 
     // 6. RETORNO PARA O FRONT-END
-    // Devolvemos a resposta da IA e os metadados dos livros para os cards
     return new Response(JSON.stringify({ 
       resposta, 
-      fontesLab: livros 
+      fontesLab: livros || [] 
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
 
   } catch (error: any) {
+    console.error("Erro na API:", error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
