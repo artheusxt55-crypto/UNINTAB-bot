@@ -1,14 +1,17 @@
 import { Groq } from "groq-sdk";
 import { createClient } from "@supabase/supabase-js";
 
-// 1. Conexão segura com o Lab (Supabase)
+// 1. Conexão com a Biblioteca (Supabase)
+// Usando as variáveis que você acabou de configurar na Vercel
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL!,
   process.env.VITE_SUPABASE_ANON_KEY!
 );
 
+// 2. Configuração da IA (Groq)
+// Tenta a KEY 1 ou a KEY 2 (ajustado para bater com seu print da Vercel)
 const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY,
+  apiKey: process.env.VITE_GROQ_API_KEY || process.env.VITE_GROQ_API_KEY2 || process.env.GROQ_API_KEY,
 });
 
 export const config = {
@@ -19,9 +22,10 @@ export default async function handler(req: Request) {
   try {
     const { prompt, contexto } = await req.json();
 
-    // 2. BUSCA ATIVA NA BIBLIOTECA DO LAB (USP, AVASUS, etc.)
-    // Pegamos a primeira palavra relevante para buscar no banco
-    const termoBusca = prompt.split(' ').filter((p: string) => p.length > 3)[0] || prompt;
+    // 3. BUSCA NOS 195 LIVROS DO LAB
+    // Filtramos o prompt para pegar o termo principal (ex: TDAH, Autismo, USP...)
+    const palavras = prompt.split(' ').filter((p: string) => p.length > 3);
+    const termoBusca = palavras[0] || prompt;
     
     const { data: livros } = await supabase
       .from('biblioteca')
@@ -29,9 +33,12 @@ export default async function handler(req: Request) {
       .ilike('conteudo_trecho', `%${termoBusca}%`)
       .limit(2);
 
-    const infoLivros = livros?.map(l => `[FONTE OFICIAL LAB: ${l.titulo}]: ${l.conteudo_trecho}`).join("\n") || "";
+    // Formatamos o conhecimento técnico para a IA
+    const infoLivros = livros?.length 
+      ? livros.map(l => `[FONTE OFICIAL LAB: ${l.titulo}]: ${l.conteudo_trecho}`).join("\n") 
+      : "Não encontrei trechos específicos nos livros do Lab para este termo, responda com sua base geral.";
 
-    // 3. Integração do Contexto (Livros + Instruções de Mapa Mental)
+    // 4. LÓGICA DE MAPA MENTAL (Preservando seu protocolo original)
     const pediuMapa = prompt.toLowerCase().includes("mapa mental");
     
     let diretrizFinal = `${contexto}\n\nCONHECIMENTO EXTRAÍDO DOS LIVROS DO LAB:\n${infoLivros}`;
@@ -45,6 +52,7 @@ export default async function handler(req: Request) {
          4. Use apenas hifens (-) e recuos para os detalhes.`;
     }
 
+    // 5. CHAMADA PARA A GROQ
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [
@@ -56,10 +64,11 @@ export default async function handler(req: Request) {
 
     const resposta = completion.choices[0]?.message?.content || "";
 
-    // 4. Retorna a resposta E os links dos livros para o Front mostrar os cards
+    // 6. RETORNO PARA O FRONT-END
+    // Devolvemos a resposta da IA e os metadados dos livros para os cards
     return new Response(JSON.stringify({ 
       resposta, 
-      fontesLab: livros // Isso aqui vai fazer o card do livro aparecer no chat!
+      fontesLab: livros 
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
