@@ -1,5 +1,4 @@
 
-```tsx
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Mic, MicOff, Menu, Loader2, FileText, User, Download, X } from "lucide-react";
