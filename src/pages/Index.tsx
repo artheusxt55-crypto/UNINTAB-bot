@@ -274,25 +274,99 @@ export default function Index() {
       
       const data: WikipediaResponse = await response.json();
       
-      const results = data.query.search.slice(0, 3).map((item: any) => ({
-        type: 'wikipedia' as const,
-        title: item.title,
-        url: `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`,
-        snippet: item.snippet.replace(/<[^>]*>/g, '').substring(0, 200) + '...'
-      }));
-      
-      const resultWithTimestamp: SearchCacheEntry = {
-        data: results,
-        timestamp: Date.now()
+    // ✅ SUBSTITUA estas 3 funções no seu código:
+
+const fetchWikipedia = useCallback(async (query: string): Promise<any[]> => {
+  try {
+    // ✅ FIX: Cache key sem template literal problemático
+    const cacheKey = 'wiki_' + query;
+    const cached = searchCache[cacheKey];
+    if (cached) return cached.data;
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(
+      `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=5&srprop=snippet&origin=*`,
+      { 
+        cache: 'force-cache',
+        signal: controller.signal
+      }
+    );
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) throw new Error('Wikipedia API falhou');
+    
+    const data: WikipediaResponse = await response.json();
+    
+    const results = data.query.search.slice(0, 3).map((item: any) => ({
+      type: 'wikipedia' as const,
+      title: item.title,
+      url: `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`,
+      snippet: item.snippet.replace(/<[^>]*>/g, '').substring(0, 200) + '...'
+    }));
+    
+    const resultWithTimestamp: SearchCacheEntry = {
+      data: results,
+      timestamp: Date.now()
+    };
+    
+    setSearchCache(prev => ({ ...prev, [cacheKey]: resultWithTimestamp }));
+    return results;
+  } catch (error) {
+    console.error('Wikipedia API error:', error);
+    return [];
+  }
+}, [searchCache]);
+
+const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
+  try {
+    // ✅ FIX: Cache key sem template literal problemático
+    const cacheKey = 'arxiv_' + query;
+    const cached = searchCache[cacheKey];
+    if (cached) return cached.data;
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(
+      `http://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&start=0&max_results=5&sortBy=relevance&sortOrder=descending`,
+      { 
+        cache: 'force-cache',
+        signal: controller.signal
+      }
+    );
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) throw new Error('ArXiv API falhou');
+    
+    const data: ArxivResponse = await response.json();
+    
+    const results = data.feed.entry.slice(0, 3).map((entry: any) => {
+      const pdfLink = entry.link.find((link: any) => link.title === 'pdf');
+      const absLink = entry.link.find((link: any) => link.title === 'abs');
+      return {
+        type: 'scientific' as const,
+        title: entry.title,
+        url: pdfLink?.href || absLink?.href || entry.link[0].href,
+        snippet: entry.summary.replace(/<[^>]*>/g, '').substring(0, 200) + '...'
       };
-      
-      setSearchCache(prev => ({ ...prev, [cacheKey]: resultWithTimestamp }));
-      return results;
-    } catch (error) {
-      console.error('Wikipedia API error:', error);
-      return [];
-    }
-  }, [searchCache]);
+    });
+    
+    const resultWithTimestamp: SearchCacheEntry = {
+      data: results,
+      timestamp: Date.now()
+    };
+    
+    setSearchCache(prev => ({ ...prev, [cacheKey]: resultWithTimestamp }));
+    return results;
+  } catch (error) {
+    console.error('ArXiv API error:', error);
+    return [];
+  }
+}, [searchCache]);
 
   const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
     try {
