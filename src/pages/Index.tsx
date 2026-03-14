@@ -186,6 +186,30 @@ function SourceCard({ source }: { source: Source }) {
   );
 }
 
+// Componente estático para "Como posso ajudar?" - SEM animações que causam conflito
+function EmptyState() {
+  return (
+    <div className="flex flex-col items-center justify-center h-full text-center py-20">
+      <div className="mb-8 opacity-80 scale-90 drop-shadow-2xl">
+        <NeuralOrb 
+          isActive={false} 
+          volume={0} 
+          frequency={0} 
+          isProcessing={false} 
+          size="md" 
+        />
+      </div>
+      <h2 className="text-3xl font-semibold tracking-tight text-white/90">
+        Como posso ajudar?
+      </h2>
+      <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-muted-foreground/40 mt-3 italic">
+        Lab Neuro-UNINTA // Assistant Online
+      </p>
+      <div className="absolute inset-0 bg-gradient-to-r from-primary/10 via-transparent to-secondary/10 rounded-full blur-3xl -z-10 opacity-60" />
+    </div>
+  );
+}
+
 export default function Index() {
   const [conversations, setConversations] = useState<Conversation[]>([
     { id: "1", title: "Nova conversa", messages: [], createdAt: new Date() },
@@ -233,10 +257,12 @@ export default function Index() {
   const activeConversation = conversations.find((c) => c.id === activeConvId) || conversations[0];
   const messages = activeConversation.messages;
 
-  // Scroll automático
+  // Scroll automático APENAS quando há mensagens
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isTyping]);
+    if (messages.length > 0 || isTyping) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages.length, isTyping]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -308,7 +334,10 @@ export default function Index() {
         Mestre: Matheus. Operador: ${idParaBusca}. 
         Histórico: ${historico.slice(-5).join(" | ")}.
         Você encontrou fontes acadêmicas confiáveis. Responda de forma técnica e cite as fontes encontradas.
-        NÃO invente informações. Baseie-se nas fontes reais.`;
+        NÃO invente informações. Baseie-se nas fontes reais.
+        CITE AS FONTES NO FINAL DA RESPOSTA usando este formato exato: 
+        📖 [TÍTULO_DA_FONTE] ([TIPO]) -> [URL]
+        Exemplo: 📖 Inteligência Artificial (WIKI) -> https://pt.wikipedia.org/wiki/...`;
 
         const [wikiSources, scieloSources, pubmedSources] = await Promise.allSettled([
           buscarWikipedia(userMsg),
@@ -319,8 +348,7 @@ export default function Index() {
             result.status === 'fulfilled' ? result.value : []
           ) as Promise<Source[]>[]
         );
-
-        sources = [...wikiSources, ...scieloSources, ...pubmedSources].flat().slice(0, 5);
+              sources = [...wikiSources, ...scieloSources, ...pubmedSources].flat().slice(0, 5);
         
         const fontesTexto = sources.map(s => `${s.title} (${s.type.toUpperCase()})`).join('; ');
         resposta = await analisarComGroq(
@@ -361,6 +389,7 @@ export default function Index() {
       setShowVoiceOrb(true);
     }
   };
+
   return (
     <div className="flex h-screen bg-background overflow-hidden font-sans relative selection:bg-primary/30">
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
@@ -442,53 +471,8 @@ export default function Index() {
 
         <main className="flex-1 overflow-y-auto chat-scrollbar relative scroll-smooth px-4 bg-gradient-to-b from-transparent to-black/20">
           {!messages.length ? (
-            <div className="flex flex-col items-center justify-center h-full text-center py-20">
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.8 }} 
-                animate={{ opacity: 1, scale: 1 }} 
-                transition={{ duration: 0.8, type: "spring", bounce: 0.3 }}
-                className="mb-8 opacity-80 scale-90 drop-shadow-2xl"
-              >
-                <NeuralOrb 
-                  isActive={audioAnalyzer.isActive} 
-                  volume={audioAnalyzer.volume} 
-                  frequency={audioAnalyzer.frequency} 
-                  isProcessing={audioAnalyzer.isProcessing} 
-                  size="md" 
-                />
-              </motion.div>
-              <motion.h2 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.2 }}
-                className="text-3xl font-semibold tracking-tight text-white/90"
-              >
-                Como posso ajudar?
-              </motion.h2>
-              <motion.p 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.4 }}
-                className="text-[10px] font-mono uppercase tracking-[0.4em] text-muted-foreground/40 mt-3 italic"
-              >
-                Lab Neuro-UNINTA // Assistant Online
-              </motion.p>
-              <motion.div
-                initial={{ opacity: 0, scale: 0 }}
-                animate={{ 
-                  opacity: 0.6,
-                  scale: [1, 1.05, 1],
-                  transition: {
-                    scale: {
-                      duration: 2,
-                      repeat: Infinity,
-                      repeatType: "reverse"
-                    }
-                  }
-                }}
-                className="absolute inset-0 bg-gradient-to-r from-primary/10 via-transparent to-secondary/10 rounded-full blur-3xl -z-10"
-              />
-            </div>
+            // Estado vazio ESTÁTICO - sem AnimatePresence/motion que causavam tremor
+            <EmptyState />
           ) : (
             <div className="max-w-3xl mx-auto w-full py-10 space-y-8">
               <AnimatePresence mode="popLayout">
@@ -512,6 +496,19 @@ export default function Index() {
                     }`}>
                       <ReactMarkdown 
                         remarkPlugins={[remarkGfm]}
+                        components={{
+                          a: ({ node, children, ...props }) => (
+                            <a 
+                              {...props} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-primary hover:text-primary/80 underline flex items-center gap-1 transition-all group"
+                            >
+                              {children}
+                              <span className="opacity-0 group-hover:opacity-100 transition-all ml-1">↗</span>
+                            </a>
+                          )
+                        }}
                         className="prose prose-invert prose-sm max-w-none prose-headings:font-bold prose-a:text-primary prose-a:underline"
                       >
                         {msg.content}
@@ -660,4 +657,4 @@ export default function Index() {
       </AnimatePresence>
     </div>
   );
-}
+}  
