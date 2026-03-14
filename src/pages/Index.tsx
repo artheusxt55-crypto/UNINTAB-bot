@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect, KeyboardEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Mic, MicOff, Plus, Menu, Loader2, Zap, FileText, BookOpen, Link2 } from "lucide-react";
@@ -125,30 +124,54 @@ function detectarPesquisa(query: string): boolean {
   );
 }
 
+function SourceIcon({ type }: { type: Source["type"] }) {
+  const size = 16;
+  const commonClasses = "shrink-0 transition-all group-hover:scale-110 group-hover:rotate-3";
+
+  switch (type) {
+    case "wikipedia":
+      return <svg className={`${commonClasses} text-blue-400`} fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>;
+    case "scielo":
+      return <svg className={`${commonClasses} text-green-400`} fill="currentColor" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5-8l-3.86 2.14-.82-1.31L9 13l-2.92-2.01L6 13l-1.5-1.5L9 7l4 2.67z"/></svg>;
+    case "pubmed":
+      return <svg className={`${commonClasses} text-red-400`} fill="currentColor" viewBox="0 0 24 24"><path d="M20 6h-2.18c.11-.31.18-.65.18-1a2.996 2.996 0 0 0-5.5-1.65l-.5.67-.5-.68C10.96 2.54 10.05 2 9 2 7.34 2 6 3.34 6 5c0 .35.07.69.18 1H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-5-2c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zM9 4c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1z"/><circle cx="12" cy="13" r="1.5"/></svg>;
+    case "scholar":
+      return <svg className={`${commonClasses} text-yellow-400`} fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>;
+    default:
+      return <Link2 className={`${commonClasses} text-gray-400`} size={size} />;
+  }
+}
+
 function SourceCard({ source }: { source: Source }) {
   return (
     <motion.a
       href={source.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="group flex items-start gap-2 p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all hover:shadow-[0_5px_20px_rgba(255,255,255,0.1)] hover:-translate-y-0.5 max-w-full"
+      className="group flex items-start gap-3 p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all duration-300 hover:shadow-[0_8px_32px_rgba(255,255,255,0.15)] hover:-translate-y-1 max-w-full hover:border-primary/30"
       initial={{ opacity: 0, y: 5 }}
       animate={{ opacity: 1, y: 0 }}
-      whileHover={{ scale: 1.02 }}
+      whileHover={{ scale: 1.03 }}
+      whileTap={{ scale: 0.98 }}
     >
-      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-gradient-to-br font-mono text-xs font-bold text-white/90 uppercase tracking-wider text-[9px]">
-        {source.type === "wikipedia" && "WIKI"}
-        {source.type === "scielo" && "SCIELO"}
-        {source.type === "pubmed" && "PUBMED"}
-        {source.type === "scholar" && "SCHOLAR"}
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-br from-primary/20 to-secondary/20 border-2 border-white/20 backdrop-blur-sm shadow-lg">
+        <SourceIcon type={source.type} />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="font-medium text-white/95 text-sm leading-tight group-hover:text-primary line-clamp-2">
+        <p className="font-semibold text-white/95 text-sm leading-tight group-hover:text-primary line-clamp-2 transition-colors">
           {source.title}
         </p>
-        <p className="text-xs text-muted-foreground/80 mt-1 font-mono tracking-tight flex items-center gap-1 group-hover:text-primary/80">
-          <Link2 size={10} /> Ver fonte original
-        </p>
+        <div className="flex items-center gap-2 mt-2">
+          <span className="px-2 py-1 bg-white/10 text-xs font-bold uppercase tracking-wider rounded-full text-primary/90 border border-primary/30 group-hover:bg-primary/20 transition-all">
+            {source.type === "wikipedia" && "WIKI"}
+            {source.type === "scielo" && "SCIELO"}
+            {source.type === "pubmed" && "PUBMED"}
+            {source.type === "scholar" && "SCHOLAR"}
+          </span>
+          <span className="text-xs text-muted-foreground/80 font-mono tracking-tight flex items-center gap-1 group-hover:text-primary/80 transition-colors">
+            <Link2 size={10} /> Abrir artigo
+          </span>
+        </div>
       </div>
     </motion.a>
   );
@@ -242,20 +265,17 @@ export default function Index() {
       const idParaBusca = userId || userMsg.toLowerCase();
       const historico = await buscarDoRedis(idParaBusca);
       
-      // Cérebro Híbrido: Detectar tipo de consulta
       const ePesquisa = detectarPesquisa(userMsg);
       let resposta = "";
       let sources: Source[] = [];
 
       if (ePesquisa) {
-        // MODO PESQUISA ACADÊMICA
         const contexto = `Você é a Aura AI do Lab Neuro-UNINTA em MODO PESQUISA ACADÊMICA. 
         Mestre: Matheus. Operador: ${idParaBusca}. 
         Histórico: ${historico.join(" | ")}.
         Você encontrou fontes acadêmicas confiáveis. Responda de forma técnica e cite as fontes encontradas.
         NÃO invente informações. Baseie-se nas fontes reais.`;
 
-        // Buscar em múltiplas bases simultaneamente
         const [wikiSources, scieloSources, pubmedSources] = await Promise.all([
           buscarWikipedia(userMsg),
           buscarScielo(userMsg),
@@ -269,7 +289,6 @@ export default function Index() {
           contexto
         );
       } else {
-        // MODO BATE-PAPO NORMAL
         const contexto = `Você é a Aura AI do Lab Neuro-UNINTA. Mestre: Matheus. Operador: ${idParaBusca}. Histórico: ${historico.join(" | ")}`;
         resposta = await analisarComGroq(userMsg, contexto);
       }
@@ -333,7 +352,8 @@ export default function Index() {
         )}
       </AnimatePresence>
 
-      <div className={`flex-1 flex flex-col min-w-0 relative z-10 transition-all duration-500 ${sidebarOpen ? "blur-md scale-[0.98] pointer-events-none lg:blur-none lg:scale-100 lg:pointer-events-auto" : ""}`}>
+      <div className={`flex-1 flex flex-col min-w-0 relative z-10 transition-all duration-500 ${sidebarOpen ? "blur-md scale-[0.98] pointer-events-none lg:blur-none lg:scale-100 lg
+               lg:pointer-events-auto" : ""}`}>
         <header className="flex items-center gap-3 px-6 py-4 border-b border-white/5 bg-background/40 backdrop-blur-xl">
           <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground"><Menu size={20} /></button>
           <div className="flex items-center gap-3 flex-1">
@@ -355,11 +375,45 @@ export default function Index() {
         <main className="flex-1 overflow-y-auto chat-scrollbar relative scroll-smooth px-4 bg-gradient-to-b from-transparent to-black/20">
           {!messages.length ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-8 opacity-80 scale-90 drop-shadow-2xl">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.8 }} 
+                animate={{ opacity: 1, scale: 1 }} 
+                transition={{ duration: 0.8, type: "spring", bounce: 0.3 }}
+                className="mb-8 opacity-80 scale-90 drop-shadow-2xl"
+              >
                 <NeuralOrb isActive={audioAnalyzer.isActive} volume={audioAnalyzer.volume} frequency={audioAnalyzer.frequency} isProcessing={audioAnalyzer.isProcessing} size="md" />
               </motion.div>
-              <h2 className="text-3xl font-semibold tracking-tight text-white/90">Como posso ajudar?</h2>
-              <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-muted-foreground/40 mt-3 italic">Lab Neuro-UNINTA // Assistant Online</p>
+              <motion.h2 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.2 }}
+                className="text-3xl font-semibold tracking-tight text-white/90"
+              >
+                Como posso ajudar?
+              </motion.h2>
+              <motion.p 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.4 }}
+                className="text-[10px] font-mono uppercase tracking-[0.4em] text-muted-foreground/40 mt-3 italic"
+              >
+                Lab Neuro-UNINTA // Assistant Online
+              </motion.p>
+              <motion.div
+                initial={{ opacity: 0, scale: 0 }}
+                animate={{ 
+                  opacity: 0.6,
+                  scale: [1, 1.05, 1],
+                  transition: {
+                    scale: {
+                      duration: 2,
+                      repeat: Infinity,
+                      repeatType: "reverse"
+                    }
+                  }
+                }}
+                className="absolute inset-0 bg-gradient-to-r from-primary/10 via-transparent to-secondary/10 rounded-full blur-3xl -z-10"
+              />
             </div>
           ) : (
             <div className="max-w-3xl mx-auto w-full py-10 space-y-8">
@@ -381,17 +435,28 @@ export default function Index() {
                       
                       {/* CARDS DE REFERÊNCIAS ACADÊMICAS */}
                       {msg.sources && msg.sources.length > 0 && (
-                        <div className="mt-6 pt-6 border-t                       border-white/10">
-                        <div className="flex items-center gap-2 mb-4 text-xs uppercase font-bold tracking-wider text-primary/80 font-mono">
-                          <BookOpen size={14} />
-                          <span>REFERÊNCIAS ACADÊMICAS ENCONTRADAS</span>
+                        <div className="mt-6 pt-6 border-t border-white/10">
+                          <motion.div 
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="flex items-center gap-2 mb-6 text-xs uppercase font-bold tracking-wider text-primary/80 font-mono"
+                          >
+                            <BookOpen size={14} className="shrink-0" />
+                            <span>REFERÊNCIAS ACADÊMICAS ENCONTRADAS</span>
+                          </motion.div>
+                          <div className="space-y-3 max-h-48 overflow-y-auto chat-scrollbar pr-2">
+                            {msg.sources.map((source, index) => (
+                              <motion.div
+                                key={`${msg.id}-${index}`}
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: index * 0.1 }}
+                              >
+                                <SourceCard source={source} />
+                              </motion.div>
+                            ))}
+                          </div>
                         </div>
-                        <div className="space-y-2 max-h-48 overflow-y-auto chat-scrollbar pr-2">
-                          {msg.sources.map((source, index) => (
-                            <SourceCard key={`${msg.id}-${index}`} source={source} />
-                          ))}
-                        </div>
-                      </div>
                       )}
 
                       {/* BOTÃO PDF INTEGRADO */}
@@ -487,5 +552,4 @@ export default function Index() {
       </AnimatePresence>
     </div>
   );
-}
-                    
+}                                                                                         
