@@ -117,17 +117,60 @@ export default function Index() {
     }
   }, [input]);
 
-  // Export PDF melhorado
-  const handleExportPDF = useCallback((messages: Message[]) => {
-    const doc = new jsPDF();
+const handleExportPDF = useCallback((messages: Message[]) => {
+  const doc = new jsPDF();
+  
+  // Header
+  doc.setFillColor(30, 41, 59);
+  doc.rect(0, 0, 210, 30, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(16);
+  doc.setFont("helvetica", "bold");
+  doc.text("AURA IA - RELATÓRIO ACADÊMICO", 15, 18);
+  
+  // CORRIGIDO: Usando concatenação de strings simples
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  const userIdText = "ID: " + (userId.toUpperCase() || 'ANÔNIMO');
+  const dateText = "Data: " + new Date().toLocaleString('pt-BR');
+  doc.text(userIdText, 15, 25);
+  doc.text(dateText, 80, 25);
+  
+  // Conteúdo
+  let yPosition = 40;
+  doc.setTextColor(40, 40, 40);
+  doc.setFontSize(11);
+  
+  messages.forEach((msg) => {
+    if (yPosition > 270) {
+      doc.addPage();
+      yPosition = 20;
+    }
     
-    // Header
-    doc.setFillColor(30, 41, 59);
-    doc.rect(0, 0, 210, 30, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(16);
-    doc.setFont("helvetica", "bold");
-    doc.text("AURA IA - RELATÓRIO ACADÊMICO", 15, 18);
+    // Ícone do usuário
+    if (msg.role === 'user') {
+      doc.setFillColor(99, 102, 241);
+      doc.circle(15, yPosition + 2, 2, 'F');
+      doc.setTextColor(99, 102, 241);
+      doc.text('Você:', 22, yPosition + 3);
+    } else {
+      doc.setFillColor(16, 185, 129);
+      doc.circle(15, yPosition + 2, 2, 'F');
+      doc.setTextColor(16, 185, 129);
+      doc.text('Aura:', 22, yPosition + 3);
+    }
+    
+    // Mensagem - CORRIGIDO também
+    doc.setTextColor(40, 40, 40);
+    const cleanText = msg.content.replace(/[*#`]/g, '').replace(/\n/g, ' ');
+    const splitText = doc.splitTextToSize(cleanText, 180);
+    doc.text(splitText, 22, yPosition + 10);
+    
+    yPosition += (splitText as string[]).length * 5 + 15;
+  });
+  
+  doc.save("aura-relatorio-" + Date.now() + ".pdf");
+}, [userId]);
     
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
