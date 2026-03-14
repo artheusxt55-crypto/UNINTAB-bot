@@ -1,11 +1,9 @@
 import { Groq } from "groq-sdk";
 import { createClient } from "@supabase/supabase-js";
 
-// 1. Conexão com a Biblioteca (Supabase)
-// Usando as variáveis que você acabou de configurar na Vercel
 const supabase = createClient(
-  process.env.VITE_SUPABASE_URL!,
-  process.env.VITE_SUPABASE_ANON_KEY!
+  process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL!,
+  process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY!
 );
 
 // 2. Configuração da IA (Groq)
