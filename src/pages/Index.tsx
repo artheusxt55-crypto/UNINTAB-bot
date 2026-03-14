@@ -1,4 +1,3 @@
-**NÃO, o código estava INCOMPLETO e com ERROS!** Aqui está a **VERSÃO 100% CORRIGIDA E COMPLETA**:
 
 ```tsx
 "use client";
