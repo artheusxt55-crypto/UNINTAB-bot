@@ -1,3 +1,4 @@
+
 import { useState, useRef, useEffect, KeyboardEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Mic, MicOff, Plus, Menu, Loader2, Zap, FileText, BookOpen, Link2 } from "lucide-react";
@@ -49,13 +50,17 @@ function TypingIndicator() {
 async function buscarWikipedia(query: string): Promise<Source[]> {
   try {
     const response = await fetch(
-      `https://pt.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`
+      `https://pt.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`,
+      { 
+        cache: 'no-cache',
+        headers: { 'Accept': 'application/json' }
+      }
     );
     if (response.ok) {
       const data = await response.json();
       return [{
-        title: data.title,
-        url: data.content_urls.desktop.page,
+        title: data.title || 'Wikipedia',
+        url: data.content_urls?.desktop?.page || `#`,
         type: "wikipedia"
       }];
     }
@@ -72,9 +77,9 @@ async function buscarScielo(query: string): Promise<Source[]> {
     );
     if (response.ok) {
       const data = await response.json();
-      return data.records.map((item: any) => ({
-        title: item.title[0],
-        url: item.link[0],
+      return (data.records || []).slice(0, 3).map((item: any) => ({
+        title: item.title?.[0] || 'SciELO Article',
+        url: item.link?.[0] || '#',
         type: "scielo"
       })) as Source[];
     }
@@ -91,17 +96,21 @@ async function buscarPubMed(query: string): Promise<Source[]> {
     );
     if (response.ok) {
       const data = await response.json();
-      if (data.esearchresult.idlist.length > 0) {
+      if (data.esearchresult?.idlist?.length > 0) {
         const ids = data.esearchresult.idlist.join(",");
         const summaryResponse = await fetch(
           `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${ids}&retmode=json`
         );
         const summaryData = await summaryResponse.json();
-        return Object.values(summaryData.result)[1].map((item: any) => ({
-          title: item.title,
-          url: `https://pubmed.ncbi.nlm.nih.gov/${item.uid}/`,
-          type: "pubmed"
-        })) as Source[];
+        const results = summaryData.result;
+        const firstResultKey = Object.keys(results)[1];
+        if (firstResultKey && results[firstResultKey]) {
+          return (results[firstResultKey] as any[]).map((item: any) => ({
+            title: item.title || 'PubMed Article',
+            url: `https://pubmed.ncbi.nlm.nih.gov/${item.uid}/`,
+            type: "pubmed"
+          }));
+        }
       }
     }
   } catch (error) {
@@ -192,54 +201,73 @@ export default function Index() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const audioAnalyzer = useAudioAnalyzer();
 
+  // Carregar userId do localStorage
   useEffect(() => {
     const savedId = localStorage.getItem('untbot_last_id');
-    if (savedId) setUserId(savedId);
+    if (savedId) {
+      setUserId(savedId);
+    }
   }, []);
 
   const exportarParaPDF = (texto: string) => {
-    const doc = new jsPDF();
-    doc.setFillColor(227, 6, 19);
-    doc.rect(0, 0, 210, 25, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(16);
-    doc.text("UNINTA - RELATÓRIO DE SINAPSE NEURAL", 15, 16);
-    doc.setFontSize(8);
-    doc.text(`ID: ${userId.toUpperCase()} | DATA: ${new Date().toLocaleDateString()}`, 140, 16);
-    doc.setTextColor(50, 50, 50);
-    doc.setFontSize(11);
-    const splitText = doc.splitTextToSize(texto.replace(/[*#]/g, ''), 180);
-    doc.text(splitText, 15, 40);
-    doc.save(`sinapse_${userId || 'lab'}_${Date.now()}.pdf`);
+    try {
+      const doc = new jsPDF();
+      doc.setFillColor(227, 6, 19);
+      doc.rect(0, 0, 210, 25, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(16);
+      doc.text("UNINTA - RELATÓRIO DE SINAPSE NEURAL", 15, 16);
+      doc.setFontSize(8);
+      doc.text(`ID: ${userId.toUpperCase()} | DATA: ${new Date().toLocaleDateString('pt-BR')}`, 140, 16);
+      doc.setTextColor(50, 50, 50);
+      doc.setFontSize(11);
+      const cleanText = texto.replace(/[*#`]/g, '').replace(/\n/g, ' ');
+      const splitText = doc.splitTextToSize(cleanText, 180);
+      doc.text(splitText, 15, 40);
+      doc.save(`sinapse_${userId || 'lab'}_${Date.now()}.pdf`);
+    } catch (error) {
+      console.error('Erro ao gerar PDF:', error);
+    }
   };
 
   const activeConversation = conversations.find((c) => c.id === activeConvId) || conversations[0];
   const messages = activeConversation.messages;
 
+  // Scroll automático
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
+  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + "px";
+      const maxHeight = 120;
+      const scrollHeight = textareaRef.current.scrollHeight;
+      textareaRef.current.style.height = Math.min(scrollHeight, maxHeight) + "px";
     }
   }, [input]);
 
   const addMessage = (role: "user" | "assistant", content: string, sources?: Source[], isResearch?: boolean) => {
     const msg: Message = { 
-      id: Date.now().toString() + Math.random(), 
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 9), 
       role, 
       content, 
       timestamp: new Date(),
-      ...(sources && { sources }),
+      ...(sources && sources.length > 0 && { sources }),
       ...(isResearch && { isResearch })
     };
+    
     setConversations((prev) =>
       prev.map((c) => {
         if (c.id !== activeConvId) return c;
-        const updated = { ...c, messages: [...c.messages, msg] };
+        const updatedMessages = [...c.messages, msg];
+        const updated = { 
+          ...c, 
+          messages: updatedMessages 
+        };
+        
+        // Atualizar título se for a primeira mensagem do usuário
         if (role === "user" && c.messages.length === 0) {
           updated.title = content.slice(0, 40) + (content.length > 40 ? "..." : "");
         }
@@ -250,11 +278,17 @@ export default function Index() {
 
   const handleSend = async () => {
     if (!input.trim() || isTyping) return;
+    
     const userMsg = input.trim();
+    let currentUserId = userId;
 
-    if (!userId) {
-      setUserId(userMsg.toLowerCase());
-      localStorage.setItem('untbot_last_id', userMsg.toLowerCase());
+    // Definir userId se ainda não foi definido
+    if (!currentUserId) {
+      currentUserId = userMsg.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (currentUserId) {
+        setUserId(currentUserId);
+        localStorage.setItem('untbot_last_id', currentUserId);
+      }
     }
 
     addMessage("user", userMsg);
@@ -262,8 +296,8 @@ export default function Index() {
     setIsTyping(true);
 
     try {
-      const idParaBusca = userId || userMsg.toLowerCase();
-      const historico = await buscarDoRedis(idParaBusca);
+      const idParaBusca = currentUserId || userMsg.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const historico = await buscarDoRedis(idParaBusca).catch(() => [] as string[]);
       
       const ePesquisa = detectarPesquisa(userMsg);
       let resposta = "";
@@ -272,38 +306,46 @@ export default function Index() {
       if (ePesquisa) {
         const contexto = `Você é a Aura AI do Lab Neuro-UNINTA em MODO PESQUISA ACADÊMICA. 
         Mestre: Matheus. Operador: ${idParaBusca}. 
-        Histórico: ${historico.join(" | ")}.
+        Histórico: ${historico.slice(-5).join(" | ")}.
         Você encontrou fontes acadêmicas confiáveis. Responda de forma técnica e cite as fontes encontradas.
         NÃO invente informações. Baseie-se nas fontes reais.`;
 
-        const [wikiSources, scieloSources, pubmedSources] = await Promise.all([
+        const [wikiSources, scieloSources, pubmedSources] = await Promise.allSettled([
           buscarWikipedia(userMsg),
           buscarScielo(userMsg),
           buscarPubMed(userMsg)
-        ]);
+        ]).then((results) => 
+          results.map((result) => 
+            result.status === 'fulfilled' ? result.value : []
+          ) as Promise<Source[]>[]
+        );
 
-        sources = [...wikiSources, ...scieloSources, ...pubmedSources].slice(0, 5);
+        sources = [...wikiSources, ...scieloSources, ...pubmedSources].flat().slice(0, 5);
         
+        const fontesTexto = sources.map(s => `${s.title} (${s.type.toUpperCase()})`).join('; ');
         resposta = await analisarComGroq(
-          `${userMsg}\n\nFONTE_INSTRUÇÃO: Cite as seguintes fontes: ${sources.map(s => `${s.title} (${s.type.toUpperCase()})`).join('; ')}`,
+          `${userMsg}\n\nFONTE_INSTRUÇÃO: Cite as seguintes fontes: ${fontesTexto}`,
           contexto
         );
       } else {
-        const contexto = `Você é a Aura AI do Lab Neuro-UNINTA. Mestre: Matheus. Operador: ${idParaBusca}. Histórico: ${historico.join(" | ")}`;
+        const contexto = `Você é a Aura AI do Lab Neuro-UNINTA. Mestre: Matheus. Operador: ${idParaBusca}. Histórico: ${historico.slice(-5).join(" | ")}`;
         resposta = await analisarComGroq(userMsg, contexto);
       }
       
-      await salvarNoRedis(idParaBusca, `U: ${userMsg} | B: ${resposta}`);
+      await salvarNoRedis(idParaBusca, `U: ${userMsg} | B: ${resposta}`).catch(console.error);
       addMessage("assistant", resposta, sources, ePesquisa);
-      falarTexto(resposta);
+      
+      // Falar texto com try-catch
+      falarTexto(resposta).catch(console.error);
     } catch (error) {
-      addMessage("assistant", "⚠️ Erro de conexão neural.", [], false);
+      console.error('Erro na comunicação:', error);
+      addMessage("assistant", "⚠️ Erro de conexão neural. Verifique sua conexão e tente novamente.", [], false);
     } finally {
       setIsTyping(false);
     }
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -319,7 +361,6 @@ export default function Index() {
       setShowVoiceOrb(true);
     }
   };
-
   return (
     <div className="flex h-screen bg-background overflow-hidden font-sans relative selection:bg-primary/30">
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
@@ -330,10 +371,18 @@ export default function Index() {
       <ChatSidebar
         conversations={conversations}
         activeConvId={activeConvId}
-        onSelect={(id) => { setActiveConvId(id); setSidebarOpen(false); }}
+        onSelect={(id) => { 
+          setActiveConvId(id); 
+          setSidebarOpen(false); 
+        }}
         onNew={() => {
           const id = Date.now().toString();
-          setConversations(prev => [{ id, title: "Nova conversa", messages: [], createdAt: new Date() }, ...prev]);
+          setConversations(prev => [{ 
+            id, 
+            title: "Nova conversa", 
+            messages: [], 
+            createdAt: new Date() 
+          }, ...prev]);
           setActiveConvId(id);
         }}
         isOpen={sidebarOpen}
@@ -352,10 +401,18 @@ export default function Index() {
         )}
       </AnimatePresence>
 
-      <div className={`flex-1 flex flex-col min-w-0 relative z-10 transition-all duration-500 ${sidebarOpen ? "blur-md scale-[0.98] pointer-events-none lg:blur-none lg:scale-100 lg
-               lg:pointer-events-auto" : ""}`}>
+      <div className={`flex-1 flex flex-col min-w-0 relative z-10 transition-all duration-500 ${
+        sidebarOpen 
+          ? "blur-md scale-[0.98] pointer-events-none lg:blur-none lg:scale-100 lg:pointer-events-auto" 
+          : ""
+      }`}>
         <header className="flex items-center gap-3 px-6 py-4 border-b border-white/5 bg-background/40 backdrop-blur-xl">
-          <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground"><Menu size={20} /></button>
+          <button 
+            onClick={() => setSidebarOpen(true)} 
+            className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground lg:hidden"
+          >
+            <Menu size={20} />
+          </button>
           <div className="flex items-center gap-3 flex-1">
             <div className="relative flex h-2.5 w-2.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
@@ -365,23 +422,40 @@ export default function Index() {
               UNINTA // {userId || "AGUARDANDO_ID"}
             </h1>
           </div>
-          <button onClick={() => {
-            const id = Date.now().toString();
-            setConversations(prev => [{ id, title: "Nova conversa", messages: [], createdAt: new Date() }, ...prev]);
-            setActiveConvId(id);
-          }} className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground"><Plus size={20} /></button>
+          <button 
+            onClick={() => {
+              const id = Date.now().toString();
+              setConversations(prev => [{ 
+                id, 
+                title: "Nova conversa", 
+                messages: [], 
+                createdAt: new Date() 
+              }, ...prev]);
+              setActiveConvId(id);
+            }} 
+            className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground"
+            title="Nova conversa"
+          >
+            <Plus size={20} />
+          </button>
         </header>
 
         <main className="flex-1 overflow-y-auto chat-scrollbar relative scroll-smooth px-4 bg-gradient-to-b from-transparent to-black/20">
           {!messages.length ? (
-            <div className="flex flex-col items-center justify-center h-full text-center">
+            <div className="flex flex-col items-center justify-center h-full text-center py-20">
               <motion.div 
                 initial={{ opacity: 0, scale: 0.8 }} 
                 animate={{ opacity: 1, scale: 1 }} 
                 transition={{ duration: 0.8, type: "spring", bounce: 0.3 }}
                 className="mb-8 opacity-80 scale-90 drop-shadow-2xl"
               >
-                <NeuralOrb isActive={audioAnalyzer.isActive} volume={audioAnalyzer.volume} frequency={audioAnalyzer.frequency} isProcessing={audioAnalyzer.isProcessing} size="md" />
+                <NeuralOrb 
+                  isActive={audioAnalyzer.isActive} 
+                  volume={audioAnalyzer.volume} 
+                  frequency={audioAnalyzer.frequency} 
+                  isProcessing={audioAnalyzer.isProcessing} 
+                  size="md" 
+                />
               </motion.div>
               <motion.h2 
                 initial={{ opacity: 0, y: 20 }}
@@ -419,16 +493,26 @@ export default function Index() {
             <div className="max-w-3xl mx-auto w-full py-10 space-y-8">
               <AnimatePresence mode="popLayout">
                 {messages.map((msg) => (
-                  <motion.div key={msg.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`flex gap-4 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
+                  <motion.div 
+                    key={msg.id} 
+                    initial={{ opacity: 0, y: 10 }} 
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className={`flex gap-4 ${msg.role === "user" ? "flex-row-reverse" : ""}`}
+                  >
                     {msg.role === "assistant" && (
                       <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center border border-primary/20 shrink-0 shadow-[0_0_15px_rgba(var(--primary),0.1)]">
                         <Zap size={14} className="text-primary animate-pulse" />
                       </div>
                     )}
-                    <div className={`p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed backdrop-blur-md border shadow-2xl ${msg.role === "user" ? "bg-primary/90 text-primary-foreground border-primary/20" : "bg-white/5 border-white/10 text-white/90"}`}>
+                    <div className={`p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed backdrop-blur-md border shadow-2xl ${
+                      msg.role === "user" 
+                        ? "bg-primary/90 text-primary-foreground border-primary/20" 
+                        : "bg-white/5 border-white/10 text-white/90"
+                    }`}>
                       <ReactMarkdown 
                         remarkPlugins={[remarkGfm]}
-                        className="prose prose-invert prose-sm max-w-none"
+                        className="prose prose-invert prose-sm max-w-none prose-headings:font-bold prose-a:text-primary prose-a:underline"
                       >
                         {msg.content}
                       </ReactMarkdown>
@@ -461,12 +545,14 @@ export default function Index() {
 
                       {/* BOTÃO PDF INTEGRADO */}
                       {msg.role === 'assistant' && (
-                        <button 
+                        <motion.button 
                           onClick={() => exportarParaPDF(msg.content)} 
-                          className="mt-4 flex items-center gap-2 text-[10px] bg-white/5 hover:bg-primary/20 p-2.5 rounded-xl border border-white/10 transition-all uppercase font-bold tracking-tighter shadow-sm hover:shadow-md"
+                          className="mt-4 flex items-center gap-2 text-[10px] bg-white/5 hover:bg-primary/20 p-2.5 rounded-xl border border-white/10 transition-all uppercase font-bold tracking-tighter shadow-sm hover:shadow-md w-full justify-center"
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
                         >
                           <FileText size={12} /> Gerar Relatório PDF
-                        </button>
+                        </motion.button>
                       )}
                     </div>
                   </motion.div>
@@ -490,7 +576,12 @@ export default function Index() {
             <div className="relative z-10 flex items-end gap-2 bg-black/80 border border-white/10 rounded-[1.5rem] p-2.5 transition-all duration-300 backdrop-blur-[40px] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
               <button 
                 onClick={toggleVoice} 
-                className={`p-2.5 rounded-xl transition-all ${audioAnalyzer.isActive ? "bg-primary text-primary-foreground shadow-[0_0_15px_rgba(var(--primary),0.5)]" : "text-muted-foreground hover:bg-white/5"}`}
+                className={`p-2.5 rounded-xl transition-all ${
+                  audioAnalyzer.isActive 
+                    ? "bg-primary text-primary-foreground shadow-[0_0_15px_rgba(var(--primary),0.5)]" 
+                    : "text-muted-foreground hover:bg-white/5"
+                }`}
+                title={audioAnalyzer.isActive ? "Parar áudio" : "Ativar áudio"}
               >
                 {audioAnalyzer.isActive ? <MicOff size={18} /> : <Mic size={18} />}
               </button>
@@ -504,14 +595,22 @@ export default function Index() {
                 rows={1} 
                 autoComplete="off"
                 spellCheck="false"
-                style={{ border: 'none', boxShadow: 'none', outline: 'none', background: 'transparent' }}
-                className="flex-1 bg-transparent border-0 focus:border-0 focus:ring-0 focus:outline-none resize-none text-sm py-2.5 placeholder:text-muted-foreground/30 font-sans chat-scrollbar overflow-y-auto shadow-none outline-none appearance-none text-white selection:bg-primary/40" 
+                disabled={isTyping}
+                style={{ 
+                  border: 'none', 
+                  boxShadow: 'none', 
+                  outline: 'none', 
+                  background: 'transparent',
+                  resize: 'none'
+                }}
+                className="flex-1 bg-transparent border-0 focus:border-0 focus:ring-0 focus:outline-none resize-none text-sm py-2.5 placeholder:text-muted-foreground/30 font-sans chat-scrollbar overflow-y-auto shadow-none outline-none appearance-none text-white selection:bg-primary/40 min-h-[20px]" 
               />
               
               <button 
                 onClick={handleSend} 
                 disabled={!input.trim() || isTyping} 
-                className="p-2.5 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 shadow-lg active:scale-95 transition-all group hover:shadow-[0_0_20px_rgba(var(--primary),0.4)]"
+                className="p-2.5 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 disabled:cursor-not-allowed shadow-lg active:scale-95 transition-all group hover:shadow-[0_0_20px_rgba(var(--primary),0.4)]"
+                title="Enviar mensagem"
               >
                 {isTyping ? (
                   <Loader2 size={18} className="animate-spin" />
@@ -533,17 +632,26 @@ export default function Index() {
             initial={{ opacity: 0 }} 
             animate={{ opacity: 1 }} 
             exit={{ opacity: 0 }} 
-            className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-3xl flex flex-col items-center justify-center"
+            className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-3xl flex flex-col items-center justify-center p-8"
           >
             <NeuralOrb 
               isActive={audioAnalyzer.isActive} 
               volume={audioAnalyzer.volume} 
               frequency={audioAnalyzer.frequency} 
-              isProcessing={audioAnalyzer.isProcessing} 
+              isProcessing={audioAnalyzer.isProcessing}
+              size="lg"
             />
+            <motion.p 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-white/80 text-sm mt-6 font-mono tracking-wide"
+            >
+              {audioAnalyzer.isProcessing ? "Processando..." : "Ouvindo..."}
+            </motion.p>
             <button 
               onClick={toggleVoice} 
-              className="mt-12 p-5 rounded-full bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive hover:text-white transition-all shadow-[0_0_30px_rgba(var(--destructive),0.2)]"
+              className="mt-12 p-5 rounded-full bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive hover:text-white transition-all shadow-[0_0_30px_rgba(var(--destructive),0.2)] active:scale-95"
+              title="Parar gravação"
             >
               <MicOff size={24} />
             </button>
@@ -552,4 +660,4 @@ export default function Index() {
       </AnimatePresence>
     </div>
   );
-}                                                                                         
+}
