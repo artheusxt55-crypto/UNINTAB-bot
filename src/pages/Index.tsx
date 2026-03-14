@@ -1,5 +1,4 @@
 
-
 ```tsx
 "use client";
 
@@ -54,6 +53,11 @@ interface ArxivResponse {
       summary: string;
     }>;
   };
+}
+
+interface SearchCacheEntry {
+  data: any[];
+  timestamp: number;
 }
 
 function TypingIndicator() {
@@ -130,7 +134,8 @@ export default function Index() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showVoiceOrb, setShowVoiceOrb] = useState(false);
   const [userId, setUserId] = useState<string>("");
-  const [searchCache, setSearchCache] = useState<Map<string, any>>(new Map());
+  // ✅ CORRIGIDO: Usando objeto simples serializável ao invés de Map
+  const [searchCache, setSearchCache] = useState<Record<string, SearchCacheEntry>>({});
   const [needsResearch, setNeedsResearch] = useState(false);
   const [needsCaseStudy, setNeedsCaseStudy] = useState(false);
   const [researchQuery, setResearchQuery] = useState("");
@@ -198,17 +203,17 @@ export default function Index() {
     updateResearchMode(input);
   }, [input, updateResearchMode]);
 
-  // ✅ Cache cleanup otimizado
+  // ✅ Cache cleanup otimizado - CORRIGIDO para objeto
   useEffect(() => {
     const interval = setInterval(() => {
       setSearchCache(prev => {
-        const newCache = new Map(prev);
+        const newCache: Record<string, SearchCacheEntry> = {};
         // Limpa apenas cache antigo
-        for (const [key] of newCache) {
-          if (Date.now() - (newCache.get(key)?.timestamp || 0) > 5 * 60 * 1000) {
-            newCache.delete(key);
+        Object.entries(prev).forEach(([key, entry]) => {
+          if (Date.now() - (entry?.timestamp || 0) <= 5 * 60 * 1000) {
+            newCache[key] = entry;
           }
-        }
+        });
         return newCache;
       });
     }, 5 * 60 * 1000);
@@ -245,12 +250,12 @@ export default function Index() {
     return () => clearTimeout(timeoutId);
   }, [input, userId]);
 
-  // ✅ APIs com cache melhorado
+  // ✅ APIs com cache melhorado - CORRIGIDAS
   const fetchWikipedia = useCallback(async (query: string): Promise<any[]> => {
     try {
       const cacheKey = `wiki_${query}`;
-      const cached = searchCache.get(cacheKey);
-      if (cached) return cached;
+      const cached = searchCache[cacheKey];
+      if (cached) return cached.data;
       
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -276,9 +281,13 @@ export default function Index() {
         snippet: item.snippet.replace(/<[^>]*>/g, '').substring(0, 200) + '...'
       }));
       
-      const resultWithTimestamp = results.map(r => ({...r, timestamp: Date.now()}));
-      setSearchCache(prev => new Map(prev).set(cacheKey, resultWithTimestamp));
-      return resultWithTimestamp;
+      const resultWithTimestamp: SearchCacheEntry = {
+        data: results,
+        timestamp: Date.now()
+      };
+      
+      setSearchCache(prev => ({ ...prev, [cacheKey]: resultWithTimestamp }));
+      return results;
     } catch (error) {
       console.error('Wikipedia API error:', error);
       return [];
@@ -288,8 +297,8 @@ export default function Index() {
   const fetchArxiv = useCallback(async (query: string): Promise<any[]> => {
     try {
       const cacheKey = `arxiv_${query}`;
-      const cached = searchCache.get(cacheKey);
-      if (cached) return cached;
+      const cached = searchCache[cacheKey];
+      if (cached) return cached.data;
       
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -319,9 +328,13 @@ export default function Index() {
         };
       });
       
-      const resultWithTimestamp = results.map(r => ({...r, timestamp: Date.now()}));
-      setSearchCache(prev => new Map(prev).set(cacheKey, resultWithTimestamp));
-      return resultWithTimestamp;
+      const resultWithTimestamp: SearchCacheEntry = {
+        data: results,
+        timestamp: Date.now()
+      };
+      
+      setSearchCache(prev => ({ ...prev, [cacheKey]: resultWithTimestamp }));
+      return results;
     } catch (error) {
       console.error('ArXiv API error:', error);
       return [];
@@ -462,7 +475,7 @@ export default function Index() {
     if (!input.trim() || isTyping) return;
     
     const userMsg = input.trim();
-    addMessage("user", userMsg);
+       addMessage("user", userMsg);
     setInput("");
     setIsTyping(true);
 
@@ -470,7 +483,6 @@ export default function Index() {
       const idParaBusca = userId || userMsg.toLowerCase().replace(/\s+/g, '_');
       const historico = await buscarDoRedis(idParaBusca).catch(() => []);
       
-      ```tsx
       let contexto = `🧠 AURA IA - ASSISTENTE ACADÊMICO DE PSICOLOGIA | Estudante: ${idParaBusca}
 
 🎓 FOCO ACADÊMICO:
@@ -856,46 +868,44 @@ export default function Index() {
             </div>
           </div>
         </footer>
-      </div>
-
-      {/* Voice Orb Overlay */}
-      <AnimatePresence>
-        {showVoiceOrb && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.9 }} 
-            animate={{ opacity: 1, scale: 1 }} 
-            exit={{ opacity: 0, scale:
-                        exit={{ opacity: 0, scale: 0.9 }}
-            className="fixed inset-0 z-[100] bg-gradient-to-br from-black/95 to-slate-900/95 backdrop-blur-3xl flex flex-col items-center justify-center p-8"
-          >
-            <div className="text-center mb-12">
-              <div className="w-48 h-48 mx-auto mb-8">
-                <NeuralOrb 
-                  isActive={audioAnalyzer.isActive} 
-                  volume={audioAnalyzer.volume} 
-                  frequency={audioAnalyzer.frequency} 
-                  isProcessing={audioAnalyzer.isProcessing} 
-                  size="2xl" 
-                />
-              </div>
-              <h3 className="text-3xl font-black mb-3 bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
-                🎤 Modo Voz Ativo
-              </h3>
-              <p className="text-slate-400 text-lg">Fale suas dúvidas de psicologia naturalmente</p>
-            </div>
-            
-            <button 
-              onClick={toggleVoice}
-              className="p-8 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-3xl shadow-2xl shadow-red-500/50 hover:shadow-3xl hover:shadow-red-500/60 hover:scale-105 active:scale-95 transition-all duration-300 font-bold text-xl flex items-center gap-3"
-              aria-label="Parar gravação de voz"
+      </
+              {/* Voice Orb Overlay - CORRIGIDO */}
+        <AnimatePresence>
+          {showVoiceOrb && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }} 
+              animate={{ opacity: 1, scale: 1 }} 
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="fixed inset-0 z-[100] bg-gradient-to-br from-black/95 to-slate-900/95 backdrop-blur-3xl flex flex-col items-center justify-center p-8"
             >
-              <MicOff size={32} />
-              <span>Parar Gravação</span>
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              <div className="text-center mb-12">
+                <div className="w-48 h-48 mx-auto mb-8">
+                  <NeuralOrb 
+                    isActive={audioAnalyzer.isActive} 
+                    volume={audioAnalyzer.volume} 
+                    frequency={audioAnalyzer.frequency} 
+                    isProcessing={audioAnalyzer.isProcessing} 
+                    size="2xl" 
+                  />
+                </div>
+                <h3 className="text-3xl font-black mb-3 bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
+                  🎤 Modo Voz Ativo
+                </h3>
+                <p className="text-slate-400 text-lg">Fale suas dúvidas de psicologia naturalmente</p>
+              </div>
+              
+              <button 
+                onClick={toggleVoice}
+                className="p-8 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-3xl shadow-2xl shadow-red-500/50 hover:shadow-3xl hover:shadow-red-500/60 hover:scale-105 active:scale-95 transition-all duration-300 font-bold text-xl flex items-center gap-3"
+                aria-label="Parar gravação de voz"
+              >
+                <MicOff size={32} />
+                <span>Parar Gravação</span>
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
-      
