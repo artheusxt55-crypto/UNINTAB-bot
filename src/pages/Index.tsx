@@ -353,17 +353,15 @@ export default function Index() {
                 contextualInfo = `Você é a Aura AI do Lab Neuro-UNINTA. Mestre: Matheus. Operador: ${idParaBusca}. Histórico: ${contextualInfo}`;
       }
 
-   // ✅ DEPOIS - COM os parâmetros novos
+  // 👇 SUBSTITUA o bloco inteiro do fetch por este:
 const response = await fetch('/api/chat', {
   method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
     prompt: userMsg,
     contexto: contextualInfo,
-    query_search: userMsg,     // ← ADICIONE ESTA LINHA
-    web_sources: webSources    // ← E ESTA
+    query_search: userMsg,        // ← SEMPRE enviar!
+    web_sources: ePesquisa ? webSources : []  // ← Vazio se não pesquisa
   }),
 });
       if (!response.ok) {
