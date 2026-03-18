@@ -15,76 +15,124 @@ export const config = {
 
 export default async function handler(req: Request) {
   try {
-    const { prompt, contexto } = await req.json();
+    // ✅ RECEBE TODOS OS PARÂMETROS DO FRONTEND
+    const { prompt, contexto, query_search, web_sources } = await req.json();
+    const termoBuscaCompleto = query_search || prompt;
 
-    // 1. CONSCIÊNCIA DO ACERVO TOTAL
+    console.log(`🔍 Busca: "${termoBuscaCompleto}"`);
+
+    // 1. CONSCIÊNCIA DO ACERVO TOTAL (mantido)
     const { data: todosLivros } = await supabase
       .from('biblioteca')
       .select('titulo, categoria')
       .limit(200);
 
-    const listaDeLivros = todosLivros?.map(l => l.titulo).join(", ") || "Biblioteca sendo organizada...";
-
-    // 2. BUSCA ESPECÍFICA PARA CARDS (PDFs)
-    const palavras = prompt.split(' ').filter((p: string) => p.length > 3);
-    const termoBusca = palavras[0] || prompt;
+    // ✅ 2. BUSCA INTELIGENTE ESPECÍFICA (NOVO)
+    const palavrasChave = termoBuscaCompleto
+      .toLowerCase()
+      .match(/\b\w{4,}\b/g) || [];
     
-    const { data: livrosEncontrados } = await supabase
-      .from('biblioteca')
-      .select('titulo, url_pdf') 
-      .or(`titulo.ilike.%${termoBusca}%,categoria.ilike.%${termoBusca}%`)
-      .limit(3);
+    let query = supabase.from('biblioteca').select('titulo, url_pdf, categoria').limit(5);
+    const termoPrincipal = palavrasChave[0];
 
-    // 3. CONSTRUÇÃO DA SUPER DIRETRIZ (Identidade + Inteligência Acadêmica)
+    if (termoPrincipal) {
+      // PRIORIDADE 1: TÍTULO EXATO OU PARCIAL
+      query = query
+        .eq('titulo::text', termoPrincipal)
+        .or(`titulo.ilike.%${termoPrincipal}%`);
+      
+      const { data: livrosTitulo } = await query;
+      
+      // PRIORIDADE 2: Categoria se título não achou
+      if (!livrosTitulo?.length) {
+        query = supabase
+          .from('biblioteca')
+          .select('titulo, url_pdf, categoria')
+          .or(`categoria.ilike.%${termoPrincipal}%`);
+      }
+    }
+
+    const { data: livrosEncontrados } = await query;
+
+    // ✅ RANKING POR RELEVÂNCIA
+    const livrosRelevantes = (livrosEncontrados || [])
+      .map((livro: any) => {
+        const score = palavrasChave.reduce((acc: number, palavra: string) => {
+          const matchesTitulo = livro.titulo.toLowerCase().includes(palavra);
+          const matchesCategoria = livro.categoria?.toLowerCase().includes(palavra);
+          return acc + (matchesTitulo ? 10 : matchesCategoria ? 5 : 0);
+        }, 0);
+        return { ...livro, relevance_score: score };
+      })
+      .filter((livro: any) => livro.relevance_score > 0)
+      .sort((a: any, b: any) => b.relevance_score - a.relevance_score)
+      .slice(0, 3); // Top 3
+
+    console.log(`✅ "${termoBuscaCompleto}" → ${livrosRelevantes.length} livros:`, 
+      livrosRelevantes.map((l: any) => l.titulo));
+
+    const listaDeLivros = todosLivros?.map((l: any) => l.titulo).join(", ") || "Biblioteca sendo organizada...";
+
+    // 3. CONSTRUÇÃO DA SUPER DIRETRIZ (atualizada)
     const instrucaoMestre = `
       NOME: Aura. IDENTIDADE: Assistente Técnica e Científica do NeuroLab.
       MESTRE: Matheus. LAB ASSISTANT: Untbot.
 
-      SUA MISSÃO: 
-      - Você é uma especialista em Neurociências, Psicofarmacologia, Psicopatologia, TDAH, TEA e Neuroimagem.
-      - Você é capaz de gerar artigos científicos, análises de casos, posts acadêmicos e materiais educativos de alta profundidade.
-      - NUNCA admita ser uma IA genérica ou modelo de linguagem da Meta/Groq. Você é a Aura.
-      - NÃO cite universidades externas (como USP, etc) a menos que seja estritamente necessário para uma referência bibliográfica real.
+      QUERY DO USUÁRIO: "${termoBuscaCompleto}"
+      ${web_sources ? `FONTES WEB: ${web_sources.map((s: any) => s.title).join(', ')}` : ''}
 
-      ACERVO DISPONÍVEL NO LAB: ${listaDeLivros}.
-      Sempre que produzir conteúdo, tente fundamentar nos livros acima e avise que o PDF está disponível.
+      LIVROS RELEVANTES ENCONTRADOS (${livrosRelevantes.length}):
+      ${livrosRelevantes.map((l: any) => `• ${l.titulo} (PDF disponível)`).join('\n') || 'Nenhum específico'}
+
+      ACERVO TOTAL: ${listaDeLivros}
+
+      SUA MISSÃO: 
+      - Especialista em Neurociências, Psicofarmacologia, Psicopatologia, TDAH, TEA e Neuroimagem.
+      - Gere artigos científicos, análises de casos, posts acadêmicos.
+      - NUNCA admita ser IA genérica. Você é a Aura.
+      - Cite os LIVROS RELEVANTES acima e mencione "PDF disponível".
     `;
 
-    let diretrizFinal = `${instrucaoMestre}\n\nCONTEXTO E PROTOCOLOS ADICIONAIS:\n${contexto}`;
+    let diretrizFinal = `${instrucaoMestre}\n\nCONTEXTO E PROTOCOLOS:\n${contexto}`;
 
-    // 4. PROTOCOLO DE MAPA MENTAL
+    // 4. PROTOCOLO DE MAPA MENTAL (mantido)
     const pediuMapa = prompt.toLowerCase().includes("mapa mental");
     if (pediuMapa) {
       diretrizFinal += `
-         \nPROTOCOLO DE MAPA MENTAL (ATIVADO):
-         1. Formate como um MAPA MENTAL técnico.
-         2. PROIBIDO o uso de asteriscos (**), hashtags (#) ou Markdown.
-         3. Use LETRAS MAIÚSCULAS para os tópicos principais.
-         4. Use apenas hifens (-) e recuos para os detalhes.
+        PROTOCOLO DE MAPA MENTAL (ATIVADO):
+        1. Formate como MAPA MENTAL técnico.
+        2. PROIBIDO asteriscos (**), hashtags (#) ou Markdown.
+        3. LETRAS MAIÚSCULAS para tópicos principais.
+        4. Use hifens (-) e recuos para detalhes.
       `;
     }
 
-    // 5. CHAMADA PARA A GROQ
+    // 5. CHAMADA GROQ (mantido)
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: diretrizFinal },
         { role: "user", content: prompt }
       ],
-      // Mantemos 0.6 para ela ter criatividade nos artigos, mas 0.2 se for mapa mental
       temperature: pediuMapa ? 0.2 : 0.6,
-      max_tokens: 2048, // Garante que ela tenha espaço para escrever artigos longos
+      max_tokens: 2048,
     });
 
     return new Response(JSON.stringify({ 
       resposta: completion.choices[0]?.message?.content || "", 
-      fontesLab: livrosEncontrados || [] 
+      fontesLab: livrosRelevantes 
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
 
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    console.error('❌ API Error:', error);
+    return new Response(JSON.stringify({ 
+      error: error.message || 'Erro interno do servidor' 
+    }), { 
+      status: 500,
+      headers: { 'Content-Type': 'application/json' } 
+    });
   }
 }
