@@ -5,7 +5,6 @@ const supabaseUrl = process.env.VITE_SUPABASE_URL || "";
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || "";
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// ✅ ROTAÇÃO POR HASH (FUNCIONA NO EDGE!)
 const groqKeys = [
   process.env.VITE_GROQ_API_KEY || "",
   process.env.VITE_GROQ_API_KEY2 || ""
@@ -13,7 +12,6 @@ const groqKeys = [
 
 let groqClients: Groq[] = [];
 
-// ✅ FUNÇÃO CORRIGIDA - SEM ESTADO GLOBAL
 function getGroqClient(query: string): Groq {
   if (groqClients.length === 0 && groqKeys.length > 0) {
     groqClients = groqKeys.map(key => new Groq({ apiKey: key }));
@@ -23,7 +21,6 @@ function getGroqClient(query: string): Groq {
     throw new Error("❌ Nenhuma chave Groq válida configurada");
   }
   
-  // ✅ HASH DA QUERY = ROTAÇÃO PERFEITA!
   const hash = query
     .toLowerCase()
     .split('')
@@ -46,72 +43,126 @@ export default async function handler(req: Request) {
 
     console.log(`🔍 Busca: "${termoBuscaCompleto}"`);
 
-    // 1. CONSCIÊNCIA DO ACERVO TOTAL
-    const { data: todosLivros } = await supabase
+    // 1. DEBUG: VERIFICAR SE TEM LIVROS NA TABELA
+    const { data: todosLivrosDebug } = await supabase
       .from('biblioteca')
-      .select('titulo, categoria')
-      .limit(200);
+      .select('titulo, url_pdf, categoria')
+      .limit(10);
+    
+    console.log(`📚 Total livros na tabela: ${todosLivrosDebug?.length || 0}`);
+    console.log(`📚 Primeiros livros:`, todosLivrosDebug?.slice(0,3));
 
-    // 2. BUSCA INTELIGENTE ESPECÍFICA
+    // 2. BUSCA MUITO MAIS AGRESSIVA
     const palavrasChave = termoBuscaCompleto
       .toLowerCase()
-      .match(/\b\w{4,}\b/g) || [];
+      .match(/\b\w{3,}\b/g) || []; // ← MUDOU: mínimo 3 letras
     
-    let query = supabase.from('biblioteca').select('titulo, url_pdf, categoria').limit(5);
-    const termoPrincipal = palavrasChave[0];
+    console.log(`🔑 Palavras-chave:`, palavrasChave);
 
-    if (termoPrincipal) {
-      query = query
-        .eq('titulo::text', termoPrincipal)
-        .or(`titulo.ilike.%${termoPrincipal}%`);
+    // PRIMEIRA TENTATIVA: TÍTULO EXATO
+    let livrosEncontrados: any[] = [];
+    
+    if (palavrasChave.length > 0) {
+      const termoPrincipal = palavrasChave[0];
       
-      const { data: livrosTitulo } = await query;
+      // TENTATIVA 1: Título exato
+      const { data: livrosTitulo } = await supabase
+        .from('biblioteca')
+        .select('titulo, url_pdf, categoria')
+        .eq('titulo', termoPrincipal)
+        .limit(5);
       
-      if (!livrosTitulo?.length) {
-        query = supabase
+      console.log(`🎯 Título exato "${termoPrincipal}":`, livrosTitulo?.length || 0);
+      
+      if (livrosTitulo?.length) {
+        livrosEncontrados = livrosTitulo;
+      } else {
+        // TENTATIVA 2: LIKE no título
+        const { data: livrosLikeTitulo } = await supabase
           .from('biblioteca')
           .select('titulo, url_pdf, categoria')
-          .or(`categoria.ilike.%${termoPrincipal}%`);
+          .or(`titulo.ilike.%${termoPrincipal}%`)
+          .limit(10);
+        
+        console.log(`🔍 Like título "${termoPrincipal}":`, livrosLikeTitulo?.length || 0);
+        livrosEncontrados = livrosLikeTitulo || [];
+      }
+      
+      // TENTATIVA 3: Categoria (se ainda não achou)
+      if (!livrosEncontrados.length && palavrasChave.length > 0) {
+        const { data: livrosCategoria } = await supabase
+          .from('biblioteca')
+          .select('titulo, url_pdf, categoria')
+          .or(palavrasChave.slice(0,3).map(p => `categoria.ilike.%${p}%`).join(','))
+          .limit(10);
+        
+        console.log(`🏷️ Categoria:`, livrosCategoria?.length || 0);
+        livrosEncontrados = livrosCategoria || [];
+      }
+      
+      // TENTATIVA 4: QUALQUER COINCIDÊNCIA (fallback)
+      if (!livrosEncontrados.length) {
+        const { data: qualquerLivro } = await supabase
+          .from('biblioteca')
+          .select('titulo, url_pdf, categoria')
+          .limit(3);
+        
+        console.log(`📖 Fallback qualquer livro:`, qualquerLivro?.length || 0);
+        livrosEncontrados = qualquerLivro || [];
       }
     }
 
-    const { data: livrosEncontrados } = await query;
-
-    // 3. RANKING POR RELEVÂNCIA
+    // 3. RANKING MELHORADO
     const livrosRelevantes = (livrosEncontrados || [])
       .map((livro: any) => {
         const score = palavrasChave.reduce((acc: number, palavra: string) => {
-          const matchesTitulo = livro.titulo.toLowerCase().includes(palavra);
+          const matchesTitulo = livro.titulo?.toLowerCase().includes(palavra);
           const matchesCategoria = livro.categoria?.toLowerCase().includes(palavra);
-          return acc + (matchesTitulo ? 10 : matchesCategoria ? 5 : 0);
+          const matchesUrl = livro.url_pdf?.toLowerCase().includes(palavra);
+          return acc + (matchesTitulo ? 15 : matchesCategoria ? 8 : matchesUrl ? 5 : 0);
         }, 0);
+        
+        // DEBUG: mostrar todos os livros avaliados
+        console.log(`📊 "${livro.titulo}" score: ${score} | URL: ${livro.url_pdf ? '✅' : '❌'}`);
+        
         return { ...livro, relevance_score: score };
       })
-      .filter((livro: any) => livro.relevance_score > 0)
+      .filter((livro: any) => livro.relevance_score > 0 || !palavrasChave.length) // ← MUDOU: mostra mesmo sem score se não tem palavras-chave
       .sort((a: any, b: any) => b.relevance_score - a.relevance_score)
-      .slice(0, 3);
+      .slice(0, 5); // ← AUMENTOU para 5
 
-    console.log(`✅ "${termoBuscaCompleto}" → ${livrosRelevantes.length} livros`);
+    console.log(`✅ LIVROS FINAIS (${livrosRelevantes.length}):`, 
+      livrosRelevantes.map((l: any) => ({ titulo: l.titulo, temUrl: !!l.url_pdf }))
+    );
 
-    const listaDeLivros = todosLivros?.map((l: any) => l.titulo).join(", ") || "Biblioteca sendo organizada...";
+    // 4. ACERVO TOTAL (apenas títulos)
+    const { data: todosLivros } = await supabase
+      .from('biblioteca')
+      .select('titulo')
+      .limit(100);
 
-    // 4. SUPER DIRETRIZ
+    const listaDeLivros = todosLivros?.map((l: any) => l.titulo).join(", ") || "Biblioteca vazia";
+
+    // 5. INSTRUÇÃO COM PDFs REAIS
+    const livrosComPdf = livrosRelevantes.filter((l: any) => l.url_pdf);
+    const livrosSemPdf = livrosRelevantes.filter((l: any) => !l.url_pdf);
+    
     const instrucaoMestre = `
-🚨 NEUROLAB UNINTA - ACERVO LEGAL ACADEMICO v2.0 ✅
-MESTRE: Matheus (Responsável Legal UNINTA)
+🚨 NEUROLAB UNINTA - ACERVO LEGAL ACADEMICO v2.1 ✅
 
-🛡️ LIVROS LEGAIS:
-${livrosRelevantes.map((l: any) => `📚 ${l.titulo} [PDF AUTORIZADO]`).join('\n') || 'Nenhum específico'}
+🛡️ PDFs DISPONÍVEIS AGORA (${livrosComPdf.length}):
+${livrosComPdf.map((l: any, i: number) => `${i+1}️⃣ ${l.titulo}\n   📎 PDF: ${l.url_pdf}`).join('\n') || 'Nenhum PDF encontrado'}
+
+📚 Outros relevantes (${livrosSemPdf.length}):
+${livrosSemPdf.slice(0,2).map((l: any, i: number) => `${i+1}️⃣ ${l.titulo}`).join('\n') || ''}
 
 ⚖️ PROTOCOLO LEGAL:
-1️⃣ LIVROS DO LAB (NÃO PIRATA)
-2️⃣ Pesquisa acadêmica (FAIR USE)
-3️⃣ CITE os livros acima
-4️⃣ SEMPRE: "PDF disponível no NeuroLab UNINTA"
+1️⃣ APENAS PDFs DO LAB (URLs acima)
+2️⃣ Cite TODOS os PDFs disponíveis
+3️⃣ Sempre: "PDF direto no NeuroLab UNINTA"
 
 QUERY: "${termoBuscaCompleto}"
-${web_sources ? `WEB: ${web_sources.map((s: any) => s.title).join(', ')}` : ''}
-ACERVO: ${listaDeLivros}
+ACERVO TOTAL: ${listaDeLivros.slice(0,200)}...
 
 Você é AURA - Neurociência, TDAH, TEA, Psicofarmacologia.
 `;
@@ -127,8 +178,7 @@ PROTOCOLO MAPA MENTAL:
 3. Hifens (-) e recuos`;
     }
 
-    // ✅ GROQ COM ROTAÇÃO POR HASH!
-    const groqClient = getGroqClient(termoBuscaCompleto); // ← AQUI!
+    const groqClient = getGroqClient(termoBuscaCompleto);
     
     const completion = await groqClient.chat.completions.create({
       model: "llama-3.3-70b-versatile",
@@ -141,8 +191,14 @@ PROTOCOLO MAPA MENTAL:
     });
 
     return new Response(JSON.stringify({ 
-      resposta: completion.choices[0]?.message?.content || "", 
-      fontesLab: livrosRelevantes
+      resposta: completion.choices[0]?.message?.content || "",
+      fontesLab: livrosRelevantes, // ← RETORNA TODOS para debug
+      debug: {
+        totalLivrosTabela: todosLivrosDebug?.length || 0,
+        palavrasChave,
+        livrosComPdf: livrosComPdf.length,
+        livrosSemPdf: livrosSemPdf.length
+      }
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -150,7 +206,6 @@ PROTOCOLO MAPA MENTAL:
 
   } catch (error: any) {
     console.error('❌ API Error:', error);
-    
     return new Response(JSON.stringify({ 
       error: error.message || 'Erro interno do servidor' 
     }), { 
