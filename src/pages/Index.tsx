@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, KeyboardEvent } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Mic, MicOff, Plus, Menu, Loader2, Zap, FileText, BookOpen, Link2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -46,52 +46,10 @@ function TypingIndicator() {
   );
 }
 
+// ✅ FUNÇÕES DE BUSCA CORRIGIDAS (ÚNICAS)
 async function buscarWikipedia(query: string): Promise<Source[]> {
   try {
-    const response = await fetch(
-      `https://pt.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`,
-      { 
-        cache: 'no-cache',
-        headers: { 'Accept': 'application/json' }
-      }
-    );
-    if (response.ok) {
-      const data = await response.json();
-      return [{
-        title: data.title || 'Wikipedia',
-        url: data.content_urls?.desktop?.page || `#`,
-        type: "wikipedia"
-      }];
-    }
-  } catch (error) {
-    console.warn("Wikipedia search failed:", error);
-  }
-  return [];
-}
-
-async function buscarScielo(query: string): Promise<Source[]> {
-  try {
-    const response = await fetch(
-      `https://search.scielo.org/?q=${encodeURIComponent(query)}&lang=pt&count=3&from=0&output=site&sort=&format=summary&fb=&page=1`
-    );
-    if (response.ok) {
-      const data = await response.json();
-      return (data.records || []).slice(0, 3).map((item: any) => ({
-        title: item.title?.[0] || 'SciELO Article',
-        url: item.link?.[0] || '#',
-        type: "scielo"
-      })) as Source[];
-    }
-  } catch (error) {
-    console.warn("SciELO search failed:", error);
-  }
-  return [];
-}
-
-// ✅ FUNÇÕES DE BUSCA CORRIGIDAS E TESTADAS
-async function buscarWikipedia(query: string): Promise<Source[]> {
-  try {
-    // Proxy para evitar CORS
+    console.log('🔍 Buscando Wikipedia:', query);
     const proxyUrl = `https://api.allorigins.win/raw?url=` + 
       encodeURIComponent(`https://pt.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=1&format=json`);
     
@@ -99,7 +57,10 @@ async function buscarWikipedia(query: string): Promise<Source[]> {
     const searchData = await searchResponse.json();
     
     const pageId = searchData.query?.search?.[0]?.pageid;
-    if (!pageId) return [];
+    if (!pageId) {
+      console.log('❌ Wikipedia: nenhuma página encontrada');
+      return [];
+    }
     
     const summaryProxyUrl = `https://api.allorigins.win/raw?url=` + 
       encodeURIComponent(`https://pt.wikipedia.org/api/rest_v1/page/summary/${pageId}`);
@@ -107,7 +68,7 @@ async function buscarWikipedia(query: string): Promise<Source[]> {
     const summaryResponse = await fetch(summaryProxyUrl);
     const data = await summaryResponse.json();
     
-    console.log('✅ WIKI:', data.title);
+    console.log('✅ WIKI encontrada:', data.title);
     return [{
       title: data.title || 'Wikipedia',
       url: data.content_urls?.desktop?.page || '#',
@@ -121,6 +82,7 @@ async function buscarWikipedia(query: string): Promise<Source[]> {
 
 async function buscarScielo(query: string): Promise<Source[]> {
   try {
+    console.log('🔍 Buscando SciELO:', query);
     const proxyUrl = `https://api.allorigins.win/raw?url=` + 
       encodeURIComponent(`https://search.scielo.org/?q=${encodeURIComponent(query)}&lang=pt&count=3&from=0&output=site&sort=&format=summary&fb=&page=1`);
     
@@ -144,12 +106,16 @@ async function buscarScielo(query: string): Promise<Source[]> {
 
 async function buscarPubMed(query: string): Promise<Source[]> {
   try {
+    console.log('🔍 Buscando PubMed:', query);
     const esearchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmax=3&retmode=json`;
     const response = await fetch(esearchUrl);
     const data = await response.json();
     const idList = data.esearchresult?.idlist || [];
     
-    if (!idList.length) return [];
+    if (!idList.length) {
+      console.log('❌ PubMed: nenhum resultado');
+      return [];
+    }
     
     const esummaryUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${idList.join(',')}&retmode=json`;
     const summaryResponse = await fetch(esummaryUrl);
@@ -172,18 +138,18 @@ async function buscarPubMed(query: string): Promise<Source[]> {
   }
 }
 
+// ✅ DETECÇÃO MELHORADA
 function detectarPesquisa(query: string): boolean {
-  const indicadoresPesquisa = [
+  const indicadores = [
     "pesquisa", "estudo", "artigo", "paper", "estudos", "pesquisas",
     "scielo", "pubmed", "scholar", "wikipedia", "referência", "fonte",
-    "literatura", "bibliografia", "o que é", "definição", "explicar"
+    "literatura", "bibliografia", "o que é", "definição", "explicar",
+    "defina", "resuma", "cite", "estudo sobre", "pesquise"
   ];
   
   const queryLower = query.toLowerCase();
-  return indicadoresPesquisa.some(indicador => 
-    queryLower.includes(indicador) || 
-    queryLower.match(/\b(estud\w+|pesquis\w+|artigo\w+|paper\w+|referênc\w+|fonte\w+)\b/)
-  );
+  return indicadores.some(ind => queryLower.includes(ind)) ||
+         queryLower.match(/\b(estud\w+|pesquis\w+|artigo\w+|defini\w+|referênc\w+)\b/);
 }
 
 function SourceIcon({ type }: { type: Source["type"] }) {
@@ -228,7 +194,7 @@ function SourceCard({ source }: { source: Source }) {
             {source.type === "wikipedia" && "WIKI"}
             {source.type === "scielo" && "SCIELO"}
             {source.type === "pubmed" && "PUBMED"}
-            {source.type === "scholar" && "📚 LIVRO LAB"} {/* ✅ ATUALIZADO */}
+            {source.type === "scholar" && "📚 LIVRO LAB"}
           </span>
           <span className="text-xs text-muted-foreground/80 font-mono tracking-tight flex items-center gap-1 group-hover:text-primary/80 transition-colors">
             <Link2 size={10} /> Abrir artigo
@@ -277,7 +243,6 @@ export default function Index() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const audioAnalyzer = useAudioAnalyzer();
 
-  // Carregar userId do localStorage
   useEffect(() => {
     const savedId = localStorage.getItem('untbot_last_id');
     if (savedId) {
@@ -309,14 +274,12 @@ export default function Index() {
   const activeConversation = conversations.find((c) => c.id === activeConvId) || conversations[0];
   const messages = activeConversation.messages;
 
-  // Scroll automático APENAS quando há mensagens
   useEffect(() => {
     if (messages.length > 0 || isTyping) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages.length, isTyping]);
 
-  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -345,7 +308,6 @@ export default function Index() {
           messages: updatedMessages 
         };
         
-        // Atualizar título se for a primeira mensagem do usuário
         if (role === "user" && c.messages.length === 0) {
           updated.title = content.slice(0, 40) + (content.length > 40 ? "..." : "");
         }
@@ -354,104 +316,114 @@ export default function Index() {
     );
   };
 
-  // ✅ handleSend ATUALIZADO COM NOVA API
+  // ✅ handleSend COMPLETAMENTE CORRIGIDO
   const handleSend = async () => {
     if (!input.trim() || isTyping) return;
     
     const userMsg = input.trim();
+    console.log('💬 Usuário:', userMsg);
+    
     let currentUserId = userId;
-
-    // Definir userId se ainda não foi definido
     if (!currentUserId) {
       currentUserId = userMsg.toLowerCase().replace(/[^a-z0-9]/g, '');
       if (currentUserId) {
         setUserId(currentUserId);
         localStorage.setItem('untbot_last_id', currentUserId);
+                }
       }
-    }
 
-    addMessage("user", userMsg);
-    setInput("");
-    setIsTyping(true);
+      addMessage("user", userMsg);
+      setInput("");
+      setIsTyping(true);
 
-    try {
-      const idParaBusca = currentUserId || userMsg.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const historico = await buscarDoRedis(idParaBusca).catch(() => [] as string[]);
-      
-      const ePesquisa = detectarPesquisa(userMsg);
-      let webSources: Source[] = []; // Fontes da web
-      let contextualInfo = historico.slice(-5).join(" | ");
-
-      // ✅ MANTER LÓGICA DE DETECÇÃO DE PESQUISA E BUSCAS NA WEB
-      if (ePesquisa) {
-        const contextoPesquisa = `Você é a Aura AI do Lab Neuro-UNINTA em MODO PESQUISA ACADÊMICA. 
-        Mestre: Matheus. Operador: ${idParaBusca}. 
-        Histórico: ${contextualInfo}.
-        Você encontrou fontes acadêmicas confiáveis. Responda de forma técnica e cite as fontes encontradas.
-        NÃO invente informações. Baseie-se nas fontes reais.`;
-
-        // Buscar fontes da web (Wikipedia, SciELO, PubMed)
-        const [wikiSources, scieloSources, pubmedSources] = await Promise.allSettled([
-          buscarWikipedia(userMsg),
-          buscarScielo(userMsg),
-          buscarPubMed(userMsg)
-        ]).then((results) => 
-          results.map((result) => 
-            result.status === 'fulfilled' ? result.value : []
-          ) as Source[][]
-        );
+      try {
+        const idParaBusca = currentUserId || userMsg.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const historico = await buscarDoRedis(idParaBusca).catch(() => [] as string[]);
         
-        webSources = [...wikiSources, ...scieloSources, ...pubmedSources].flat().slice(0, 5);
-        contextualInfo = contextoPesquisa;
-      } else {
-                contextualInfo = `Você é a Aura AI do Lab Neuro-UNINTA. Mestre: Matheus. Operador: ${idParaBusca}. Histórico: ${contextualInfo}`;
-      }
+        const ePesquisa = detectarPesquisa(userMsg);
+        let webSources: Source[] = [];
+        let contextualInfo = historico.slice(-5).join(" | ");
 
-  // 👇 SUBSTITUA o bloco inteiro do fetch por este:
-const response = await fetch('/api/chat', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    prompt: userMsg,
-    contexto: contextualInfo,
-    query_search: userMsg,        // ← SEMPRE enviar!
-    web_sources: ePesquisa ? webSources : []  // ← Vazio se não pesquisa
-  }),
-});
-      if (!response.ok) {
-        throw new Error(`Erro na API: ${response.status}`);
-      }
+        console.log('🔍 É pesquisa?', ePesquisa);
 
-      const apiData = await response.json();
-      const resposta = apiData.resposta || apiData.content || "Resposta não encontrada";
+        if (ePesquisa) {
+          console.log('🚀 MODO PESQUISA ATIVADO!');
+          
+          const [wikiSources, scieloSources, pubmedSources] = await Promise.all([
+            buscarWikipedia(userMsg),
+            buscarScielo(userMsg),
+            buscarPubMed(userMsg)
+          ]);
+          
+          webSources = [...wikiSources, ...scieloSources, ...pubmedSources]
+            .filter(s => s.url !== '#')
+            .slice(0, 5);
+          
+          console.log('🌐 FONTES WEB:', webSources.length, webSources.map(s => ({type: s.type, title: s.title})));
+          
+          contextualInfo = `MODO PESQUISA ACADÊMICA. Fontes Web (${webSources.length}): 
+${webSources.map(s => `• ${s.title} (${s.type})`).join('\n')}
+Histórico: ${historico.slice(-3).join(" | ")}`;
+        } else {
+          contextualInfo = `Você é a Aura AI do Lab Neuro-UNINTA. Mestre: Matheus. Operador: ${idParaBusca}. Histórico: ${contextualInfo}`;
+        }
 
-      // ✅ COMBINAR FONTES: Web + fontesLab (Supabase)
-      let allSources: Source[] = [...webSources];
-      
-      if (apiData.fontesLab && Array.isArray(apiData.fontesLab)) {
-        const labSources: Source[] = apiData.fontesLab.map((labItem: any) => ({
-          title: labItem.title || 'Livro Lab Neuro-UNINTA',
-          url: labItem.url_pdf || '#',
-          type: 'scholar' as const
-        })).slice(0, 5); // Limitar a 5 fontes lab
+        console.log('📤 Enviando para API:', { prompt: userMsg, web_sources: webSources.length, ePesquisa });
         
-        allSources = [...allSources, ...labSources];
-      }
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: userMsg,
+            contexto: contextualInfo,
+            query_search: userMsg,
+            web_sources: ePesquisa ? webSources : []
+          }),
+        });
 
-      // ✅ Manter funções existentes
-      await salvarNoRedis(idParaBusca, `U: ${userMsg} | B: ${resposta}`).catch(console.error);
-      addMessage("assistant", resposta, allSources, ePesquisa);
-      
-      // Falar texto
-      falarTexto(resposta).catch(console.error);
-      
-    } catch (error) {
-      console.error('Erro na comunicação:', error);
-      addMessage("assistant", "⚠️ Erro de conexão neural. Verifique sua conexão e tente novamente.", [], false);
-    } finally {
-      setIsTyping(false);
-    }
-  };
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`API ${response.status}: ${errorText}`);
+        }
+
+        const apiData = await response.json();
+        console.log('📥 API Response:', {
+          resposta: apiData.resposta?.slice(0, 100) + '...',
+          fontesLab: apiData.fontesLab?.length || 0,
+          debug: apiData.debug
+        });
+
+        const resposta = apiData.resposta || "Resposta não encontrada";
+
+        let allSources: Source[] = [...webSources];
+        
+        if (apiData.fontesLab && Array.isArray(apiData.fontesLab)) {
+          const labSources: Source[] = apiData.fontesLab
+            .map((labItem: any) => ({
+              title: labItem.titulo || labItem.title || 'Livro Lab Neuro-UNINTA',
+              url: labItem.url_pdf || labItem.url || '#',
+              type: 'scholar' as const
+            }))
+            .filter((s: Source) => s.url && s.url !== '#')
+            .slice(0, 5);
+          
+          console.log('🏛️ FONTES LAB:', labSources.length, labSources.map(s => s.title));
+          allSources = [...allSources, ...labSources];
+        }
+
+        console.log('🎉 TODAS FONTES:', allSources.length, allSources.map(s => ({type: s.type, title: s.title.slice(0,30)})));
+
+        await salvarNoRedis(idParaBusca, `U: ${userMsg} | B: ${resposta}`).catch(console.error);
+        addMessage("assistant", resposta, allSources, ePesquisa);
+        falarTexto(resposta).catch(console.error);
+        
+      } catch (error) {
+        console.error('❌ Erro total:', error);
+        addMessage("assistant", "⚠️ Erro de conexão neural. Verifique sua conexão e tente novamente.", [], false);
+      } finally {
+        setIsTyping(false);
+      }
+    };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -520,7 +492,7 @@ const response = await fetch('/api/chat', {
             onClick={() => setSidebarOpen(true)} 
             className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground lg:hidden"
           >
-            <Menu size={20} />
+                       <Menu size={20} />
           </button>
           <div className="flex items-center gap-3 flex-1">
             <div className="relative flex h-2.5 w-2.5">
@@ -593,7 +565,6 @@ const response = await fetch('/api/chat', {
                         {msg.content}
                       </ReactMarkdown>
                       
-                      {/* CARDS DE REFERÊNCIAS ACADÊMICAS */}
                       {msg.sources && msg.sources.length > 0 && (
                         <div className="mt-6 pt-6 border-t border-white/10">
                           <motion.div 
@@ -602,9 +573,9 @@ const response = await fetch('/api/chat', {
                             className="flex items-center gap-2 mb-6 text-xs uppercase font-bold tracking-wider text-primary/80 font-mono"
                           >
                             <BookOpen size={14} className="shrink-0" />
-                            <span>REFERÊNCIAS ACADÊMICAS ENCONTRADAS</span>
+                            <span>REFERÊNCIAS ACADÊMICAS ENCONTRADAS ({msg.sources.length})</span>
                           </motion.div>
-                          <div className="space-y-3 max-h-48 overflow-y-auto chat-scrollbar pr-2">
+                                                   <div className="space-y-3 max-h-48 overflow-y-auto chat-scrollbar pr-2">
                             {msg.sources.map((source, index) => (
                               <motion.div
                                 key={`${msg.id}-${index}`}
@@ -619,7 +590,6 @@ const response = await fetch('/api/chat', {
                         </div>
                       )}
 
-                      {/* BOTÃO PDF INTEGRADO */}
                       {msg.role === 'assistant' && (
                         <motion.button 
                           onClick={() => exportarParaPDF(msg.content)} 
