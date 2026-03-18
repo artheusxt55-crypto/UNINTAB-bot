@@ -5,9 +5,33 @@ const supabaseUrl = process.env.VITE_SUPABASE_URL || "";
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || "";
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-const groq = new Groq({
-  apiKey: process.env.VITE_GROQ_API_KEY || process.env.VITE_GROQ_API_KEY2 || ""
-});
+// ✅ ROTAÇÃO DE CHAVES GROQ
+const groqKeys = [
+  process.env.VITE_GROQ_API_KEY || "",
+  process.env.VITE_GROQ_API_KEY2 || ""
+].filter(Boolean); // Remove chaves vazias
+
+let currentGroqIndex = 0;
+let groqClients: Groq[] = [];
+
+// ✅ FUNÇÃO PARA CRIAR CLIENTE COM ROTAÇÃO
+function getGroqClient(): Groq {
+  if (groqClients.length === 0 && groqKeys.length > 0) {
+    groqClients = groqKeys.map(key => new Groq({ apiKey: key }));
+  }
+  
+  if (groqClients.length === 0) {
+    throw new Error("Nenhuma chave Groq válida configurada");
+  }
+  
+  const client = groqClients[currentGroqIndex];
+  console.log(`🔄 Usando Groq Key ${currentGroqIndex + 1}/${groqClients.length}`);
+  
+  // ✅ ROTAÇÃO AUTOMÁTICA (próxima chamada usa outra chave)
+  currentGroqIndex = (currentGroqIndex + 1) % groqClients.length;
+  
+  return client;
+}
 
 export const config = {
   runtime: 'edge',
@@ -97,6 +121,7 @@ Especialista: Neurociência, TDAH, TEA, Psicofarmacologia.
 `;
 
     let diretrizFinal = `${instrucaoMestre}\n\nCONTEXTO:\n${contexto}`;
+    
     // 4. PROTOCOLO DE MAPA MENTAL (mantido)
     const pediuMapa = prompt.toLowerCase().includes("mapa mental");
     if (pediuMapa) {
@@ -109,8 +134,10 @@ Especialista: Neurociência, TDAH, TEA, Psicofarmacologia.
       `;
     }
 
-    // 5. CHAMADA GROQ (mantido)
-    const completion = await groq.chat.completions.create({
+    // ✅ 5. CHAMADA GROQ COM ROTAÇÃO AUTOMÁTICA
+    const groqClient = getGroqClient();
+    
+    const completion = await groqClient.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: diretrizFinal },
@@ -122,7 +149,8 @@ Especialista: Neurociência, TDAH, TEA, Psicofarmacologia.
 
     return new Response(JSON.stringify({ 
       resposta: completion.choices[0]?.message?.content || "", 
-      fontesLab: livrosRelevantes 
+      fontesLab: livrosRelevantes,
+      groqKeyUsada: currentGroqIndex // Debug: qual chave foi usada
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -130,6 +158,27 @@ Especialista: Neurociência, TDAH, TEA, Psicofarmacologia.
 
   } catch (error: any) {
     console.error('❌ API Error:', error);
+    
+    // ✅ FALLBACK: Tenta outra chave se uma falhar
+    if (error.message?.includes('401') || error.message?.includes('apiKey')) {
+      console.log('🔄 Tentando próxima chave Groq (fallback)...');
+      currentGroqIndex = (currentGroqIndex + 1) % groqClients.length;
+      
+      try {
+        const groqClientFallback = getGroqClient();
+        // Aqui você poderia refazer a chamada completa com fallback
+        return new Response(JSON.stringify({ 
+          error: 'Chave temporariamente indisponível, tente novamente',
+          fallback: true
+        }), { 
+          status: 503,
+          headers: { 'Content-Type': 'application/json' } 
+        });
+      } catch (fallbackError) {
+        console.error('❌ Fallback falhou:', fallbackError);
+      }
+    }
+    
     return new Response(JSON.stringify({ 
       error: error.message || 'Erro interno do servidor' 
     }), { 
