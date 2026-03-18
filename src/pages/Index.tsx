@@ -353,18 +353,19 @@ export default function Index() {
                 contextualInfo = `Você é a Aura AI do Lab Neuro-UNINTA. Mestre: Matheus. Operador: ${idParaBusca}. Histórico: ${contextualInfo}`;
       }
 
-      // ✅ NOVA CHAMADA PARA API /api/chat
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          prompt: userMsg,
-          contexto: contextualInfo
-        }),
-      });
-
+   // ✅ DEPOIS - COM os parâmetros novos
+const response = await fetch('/api/chat', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    prompt: userMsg,
+    contexto: contextualInfo,
+    query_search: userMsg,     // ← ADICIONE ESTA LINHA
+    web_sources: webSources    // ← E ESTA
+  }),
+});
       if (!response.ok) {
         throw new Error(`Erro na API: ${response.status}`);
       }
