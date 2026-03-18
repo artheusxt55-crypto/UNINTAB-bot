@@ -88,34 +88,88 @@ async function buscarScielo(query: string): Promise<Source[]> {
   return [];
 }
 
+// ✅ FUNÇÕES DE BUSCA CORRIGIDAS E TESTADAS
+async function buscarWikipedia(query: string): Promise<Source[]> {
+  try {
+    // Proxy para evitar CORS
+    const proxyUrl = `https://api.allorigins.win/raw?url=` + 
+      encodeURIComponent(`https://pt.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=1&format=json`);
+    
+    const searchResponse = await fetch(proxyUrl, { cache: 'no-cache' });
+    const searchData = await searchResponse.json();
+    
+    const pageId = searchData.query?.search?.[0]?.pageid;
+    if (!pageId) return [];
+    
+    const summaryProxyUrl = `https://api.allorigins.win/raw?url=` + 
+      encodeURIComponent(`https://pt.wikipedia.org/api/rest_v1/page/summary/${pageId}`);
+    
+    const summaryResponse = await fetch(summaryProxyUrl);
+    const data = await summaryResponse.json();
+    
+    console.log('✅ WIKI:', data.title);
+    return [{
+      title: data.title || 'Wikipedia',
+      url: data.content_urls?.desktop?.page || '#',
+      type: "wikipedia"
+    }];
+  } catch (error) {
+    console.warn("Wikipedia failed:", error);
+    return [];
+  }
+}
+
+async function buscarScielo(query: string): Promise<Source[]> {
+  try {
+    const proxyUrl = `https://api.allorigins.win/raw?url=` + 
+      encodeURIComponent(`https://search.scielo.org/?q=${encodeURIComponent(query)}&lang=pt&count=3&from=0&output=site&sort=&format=summary&fb=&page=1`);
+    
+    const response = await fetch(proxyUrl);
+    const text = await response.text();
+    const data = JSON.parse(text);
+    
+    const sources = (data.records || []).slice(0, 3).map((item: any) => ({
+      title: item.title?.[0] || 'SciELO Article',
+      url: item.link?.[0] || '#',
+      type: "scielo"
+    })).filter(s => s.url !== '#') as Source[];
+    
+    console.log('✅ SCIelo:', sources.length);
+    return sources;
+  } catch (error) {
+    console.warn("SciELO failed:", error);
+    return [];
+  }
+}
+
 async function buscarPubMed(query: string): Promise<Source[]> {
   try {
-    const response = await fetch(
-      `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmax=3&retmode=json`
-    );
-    if (response.ok) {
-      const data = await response.json();
-      if (data.esearchresult?.idlist?.length > 0) {
-        const ids = data.esearchresult.idlist.join(",");
-        const summaryResponse = await fetch(
-          `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${ids}&retmode=json`
-        );
-        const summaryData = await summaryResponse.json();
-        const results = summaryData.result;
-        const firstResultKey = Object.keys(results)[1];
-        if (firstResultKey && results[firstResultKey]) {
-          return (results[firstResultKey] as any[]).map((item: any) => ({
-            title: item.title || 'PubMed Article',
-            url: `https://pubmed.ncbi.nlm.nih.gov/${item.uid}/`,
-            type: "pubmed"
-          }));
-        }
-      }
-    }
+    const esearchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmax=3&retmode=json`;
+    const response = await fetch(esearchUrl);
+    const data = await response.json();
+    const idList = data.esearchresult?.idlist || [];
+    
+    if (!idList.length) return [];
+    
+    const esummaryUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${idList.join(',')}&retmode=json`;
+    const summaryResponse = await fetch(esummaryUrl);
+    const summaryData = await summaryResponse.json();
+    
+    const sources: Source[] = idList.map((uid: string) => {
+      const doc = summaryData.result[uid]?.[0];
+      return doc ? {
+        title: doc.title || 'PubMed Article',
+        url: `https://pubmed.ncbi.nlm.nih.gov/${uid}/`,
+        type: "pubmed"
+      } : null;
+    }).filter(Boolean) as Source[];
+    
+    console.log('✅ PubMed:', sources.length);
+    return sources.slice(0, 3);
   } catch (error) {
-    console.warn("PubMed search failed:", error);
+    console.warn("PubMed failed:", error);
+    return [];
   }
-  return [];
 }
 
 function detectarPesquisa(query: string): boolean {
