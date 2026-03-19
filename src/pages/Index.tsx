@@ -46,99 +46,7 @@ function TypingIndicator() {
   );
 }
 
-// ✅ FUNÇÕES DE BUSCA CORRIGIDAS (ÚNICAS)
-async function buscarWikipedia(query: string): Promise<Source[]> {
-  try {
-    console.log('🔍 Buscando Wikipedia:', query);
-    const proxyUrl = `https://api.allorigins.win/raw?url=` + 
-      encodeURIComponent(`https://pt.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=1&format=json`);
-    
-    const searchResponse = await fetch(proxyUrl, { cache: 'no-cache' });
-    const searchData = await searchResponse.json();
-    
-    const pageId = searchData.query?.search?.[0]?.pageid;
-    if (!pageId) {
-      console.log('❌ Wikipedia: nenhuma página encontrada');
-      return [];
-    }
-    
-    const summaryProxyUrl = `https://api.allorigins.win/raw?url=` + 
-      encodeURIComponent(`https://pt.wikipedia.org/api/rest_v1/page/summary/${pageId}`);
-    
-    const summaryResponse = await fetch(summaryProxyUrl);
-    const data = await summaryResponse.json();
-    
-    console.log('✅ WIKI encontrada:', data.title);
-    return [{
-      title: data.title || 'Wikipedia',
-      url: data.content_urls?.desktop?.page || '#',
-      type: "wikipedia"
-    }];
-  } catch (error) {
-    console.warn("Wikipedia failed:", error);
-    return [];
-  }
-}
-
-async function buscarScielo(query: string): Promise<Source[]> {
-  try {
-    console.log('🔍 Buscando SciELO:', query);
-    const proxyUrl = `https://api.allorigins.win/raw?url=` + 
-      encodeURIComponent(`https://search.scielo.org/?q=${encodeURIComponent(query)}&lang=pt&count=3&from=0&output=site&sort=&format=summary&fb=&page=1`);
-    
-    const response = await fetch(proxyUrl);
-    const text = await response.text();
-    const data = JSON.parse(text);
-    
-    const sources = (data.records || []).slice(0, 3).map((item: any) => ({
-      title: item.title?.[0] || 'SciELO Article',
-      url: item.link?.[0] || '#',
-      type: "scielo"
-    })).filter(s => s.url !== '#') as Source[];
-    
-    console.log('✅ SCIelo:', sources.length);
-    return sources;
-  } catch (error) {
-    console.warn("SciELO failed:", error);
-    return [];
-  }
-}
-
-async function buscarPubMed(query: string): Promise<Source[]> {
-  try {
-    console.log('🔍 Buscando PubMed:', query);
-    const esearchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmax=3&retmode=json`;
-    const response = await fetch(esearchUrl);
-    const data = await response.json();
-    const idList = data.esearchresult?.idlist || [];
-    
-    if (!idList.length) {
-      console.log('❌ PubMed: nenhum resultado');
-      return [];
-    }
-    
-    const esummaryUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${idList.join(',')}&retmode=json`;
-    const summaryResponse = await fetch(esummaryUrl);
-    const summaryData = await summaryResponse.json();
-    
-    const sources: Source[] = idList.map((uid: string) => {
-      const doc = summaryData.result[uid]?.[0];
-      return doc ? {
-        title: doc.title || 'PubMed Article',
-        url: `https://pubmed.ncbi.nlm.nih.gov/${uid}/`,
-        type: "pubmed"
-      } : null;
-    }).filter(Boolean) as Source[];
-    
-    console.log('✅ PubMed:', sources.length);
-    return sources.slice(0, 3);
-  } catch (error) {
-    console.warn("PubMed failed:", error);
-    return [];
-  }
-}
-
-// ✅ DETECÇÃO MELHORADA
+// ✅ DETECÇÃO DE PESQUISA SIMPLIFICADA (sem APIs externas)
 function detectarPesquisa(query: string): boolean {
   const indicadores = [
     "pesquisa", "estudo", "artigo", "paper", "estudos", "pesquisas",
@@ -316,7 +224,7 @@ export default function Index() {
     );
   };
 
-  // ✅ handleSend COMPLETAMENTE CORRIGIDO
+  // ✅ handleSend SIMPLIFICADO E FUNCIONAL (apenas Redis + /api/chat)
   const handleSend = async () => {
     if (!input.trim() || isTyping) return;
     
@@ -329,101 +237,78 @@ export default function Index() {
       if (currentUserId) {
         setUserId(currentUserId);
         localStorage.setItem('untbot_last_id', currentUserId);
-                }
+      }
+    }
+
+    addMessage("user", userMsg);
+    setInput("");
+    setIsTyping(true);
+
+    try {
+      // ✅ APENAS REDIS para histórico
+      const idParaBusca = currentUserId || userMsg.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const historico = await buscarDoRedis(idParaBusca).catch(() => [] as string[]);
+      const contextualInfo = historico.slice(-5).join(" | ");
+      
+      const ePesquisa = detectarPesquisa(userMsg);
+      
+      console.log('🔍 É pesquisa?', ePesquisa);
+      console.log('📤 Enviando para /api/chat:', { prompt: userMsg, ePesquisa });
+
+      // ✅ ÚNICA requisição externa: /api/chat (seu backend)
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: userMsg,
+          contexto: `Você é a Aura AI do Lab Neuro-UNINTA. Mestre: Matheus. Operador: ${idParaBusca}. ${ePesquisa ? 'MODO PESQUISA ACADÊMICA' : ''} Histórico: ${contextualInfo}`,
+          query_search: userMsg,
+          web_sources: [] // Sem fontes web externas
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API ${response.status}: ${errorText}`);
       }
 
-      addMessage("user", userMsg);
-      setInput("");
-      setIsTyping(true);
+      const apiData = await response.json();
+      console.log('📥 /api/chat Response:', {
+        resposta: apiData.resposta?.slice(0, 100) + '...',
+        fontesLab: apiData.fontesLab?.length || 0
+      });
 
-      try {
-        const idParaBusca = currentUserId || userMsg.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const historico = await buscarDoRedis(idParaBusca).catch(() => [] as string[]);
+      const resposta = apiData.resposta || "Resposta não encontrada";
+      let allSources: Source[] = [];
+
+      // ✅ Fontes apenas do seu backend (fontesLab)
+      if (apiData.fontesLab && Array.isArray(apiData.fontesLab)) {
+        const labSources: Source[] = apiData.fontesLab
+          .map((labItem: any) => ({
+            title: labItem.titulo || labItem.title || 'Livro Lab Neuro-UNINTA',
+            url: labItem.url_pdf || labItem.url || '#',
+            type: 'scholar' as const
+          }))
+          .filter((s: Source) => s.url && s.url !== '#')
+          .slice(0, 5);
         
-        const ePesquisa = detectarPesquisa(userMsg);
-        let webSources: Source[] = [];
-        let contextualInfo = historico.slice(-5).join(" | ");
-
-        console.log('🔍 É pesquisa?', ePesquisa);
-
-        if (ePesquisa) {
-          console.log('🚀 MODO PESQUISA ATIVADO!');
-          
-          const [wikiSources, scieloSources, pubmedSources] = await Promise.all([
-            buscarWikipedia(userMsg),
-            buscarScielo(userMsg),
-            buscarPubMed(userMsg)
-          ]);
-          
-          webSources = [...wikiSources, ...scieloSources, ...pubmedSources]
-            .filter(s => s.url !== '#')
-            .slice(0, 5);
-          
-          console.log('🌐 FONTES WEB:', webSources.length, webSources.map(s => ({type: s.type, title: s.title})));
-          
-          contextualInfo = `MODO PESQUISA ACADÊMICA. Fontes Web (${webSources.length}): 
-${webSources.map(s => `• ${s.title} (${s.type})`).join('\n')}
-Histórico: ${historico.slice(-3).join(" | ")}`;
-        } else {
-          contextualInfo = `Você é a Aura AI do Lab Neuro-UNINTA. Mestre: Matheus. Operador: ${idParaBusca}. Histórico: ${contextualInfo}`;
-        }
-
-        console.log('📤 Enviando para API:', { prompt: userMsg, web_sources: webSources.length, ePesquisa });
-        
-        const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: userMsg,
-            contexto: contextualInfo,
-            query_search: userMsg,
-            web_sources: ePesquisa ? webSources : []
-          }),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`API ${response.status}: ${errorText}`);
-        }
-
-        const apiData = await response.json();
-        console.log('📥 API Response:', {
-          resposta: apiData.resposta?.slice(0, 100) + '...',
-          fontesLab: apiData.fontesLab?.length || 0,
-          debug: apiData.debug
-        });
-
-        const resposta = apiData.resposta || "Resposta não encontrada";
-
-        let allSources: Source[] = [...webSources];
-        
-        if (apiData.fontesLab && Array.isArray(apiData.fontesLab)) {
-          const labSources: Source[] = apiData.fontesLab
-            .map((labItem: any) => ({
-              title: labItem.titulo || labItem.title || 'Livro Lab Neuro-UNINTA',
-              url: labItem.url_pdf || labItem.url || '#',
-              type: 'scholar' as const
-            }))
-            .filter((s: Source) => s.url && s.url !== '#')
-            .slice(0, 5);
-          
-          console.log('🏛️ FONTES LAB:', labSources.length, labSources.map(s => s.title));
-          allSources = [...allSources, ...labSources];
-        }
-
-        console.log('🎉 TODAS FONTES:', allSources.length, allSources.map(s => ({type: s.type, title: s.title.slice(0,30)})));
-
-        await salvarNoRedis(idParaBusca, `U: ${userMsg} | B: ${resposta}`).catch(console.error);
-        addMessage("assistant", resposta, allSources, ePesquisa);
-        falarTexto(resposta).catch(console.error);
-        
-      } catch (error) {
-        console.error('❌ Erro total:', error);
-        addMessage("assistant", "⚠️ Erro de conexão neural. Verifique sua conexão e tente novamente.", [], false);
-      } finally {
-        setIsTyping(false);
+        console.log('🏛️ FONTES LAB:', labSources.length);
+        allSources = labSources;
       }
-    };
+
+      // ✅ APENAS REDIS para salvar histórico
+      await salvarNoRedis(idParaBusca, `U: ${userMsg} | B: ${resposta}`).catch(console.error);
+      
+      addMessage("assistant", resposta, allSources, ePesquisa);
+      falarTexto(resposta).catch(console.error);
+      
+    } catch (error) {
+      console.error('❌ Erro:', error);
+      addMessage("assistant", "⚠️ Erro de conexão neural. Verifique sua conexão e tente novamente.", [], false);
+    } finally {
+      setIsTyping(false);
+    }
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -442,6 +327,7 @@ Histórico: ${historico.slice(-3).join(" | ")}`;
     }
   };
 
+  // ✅ RESTO DO JSX permanece igual...
   return (
     <div className="flex h-screen bg-background overflow-hidden font-sans relative selection:bg-primary/30">
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
@@ -458,252 +344,252 @@ Histórico: ${historico.slice(-3).join(" | ")}`;
         }}
         onNew={() => {
           const id = Date.now().toString();
-          setConversations(prev => [{ 
-            id, 
-            title: "Nova conversa", 
-            messages: [], 
-            createdAt: new Date() 
-          }, ...prev]);
-          setActiveConvId(id);
-        }}
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
+          setConversations(prev => [{
+                      id, 
+          title: "Nova conversa", 
+          messages: [], 
+          createdAt: new Date() 
+        }, ...prev]);
+        setActiveConvId(id);
+      }}
+      isOpen={sidebarOpen}
+      onClose={() => setSidebarOpen(false)}
+    />
 
-      <AnimatePresence>
-        {sidebarOpen && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setSidebarOpen(false)}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[40] lg:hidden"
-          />
-        )}
-      </AnimatePresence>
+    <AnimatePresence>
+      {sidebarOpen && (
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[40] lg:hidden"
+        />
+      )}
+    </AnimatePresence>
 
-      <div className={`flex-1 flex flex-col min-w-0 relative z-10 transition-all duration-500 ${
-        sidebarOpen 
-          ? "blur-md scale-[0.98] pointer-events-none lg:blur-none lg:scale-100 lg:pointer-events-auto" 
-          : ""
-      }`}>
-        <header className="flex items-center gap-3 px-6 py-4 border-b border-white/5 bg-background/40 backdrop-blur-xl">
-          <button 
-            onClick={() => setSidebarOpen(true)} 
-            className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground lg:hidden"
-          >
-                       <Menu size={20} />
-          </button>
-          <div className="flex items-center gap-3 flex-1">
-            <div className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary shadow-[0_0_8px_rgba(var(--primary),0.8)]"></span>
-            </div>
-            <h1 className="text-xs font-bold font-mono tracking-[0.2em] text-primary uppercase text-glow">
-              UNINTA // {userId || "AGUARDANDO_ID"}
-            </h1>
+    <div className={`flex-1 flex flex-col min-w-0 relative z-10 transition-all duration-500 ${
+      sidebarOpen 
+        ? "blur-md scale-[0.98] pointer-events-none lg:blur-none lg:scale-100 lg:pointer-events-auto" 
+        : ""
+    }`}>
+      <header className="flex items-center gap-3 px-6 py-4 border-b border-white/5 bg-background/40 backdrop-blur-xl">
+        <button 
+          onClick={() => setSidebarOpen(true)} 
+          className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground lg:hidden"
+        >
+          <Menu size={20} />
+        </button>
+        <div className="flex items-center gap-3 flex-1">
+          <div className="relative flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary shadow-[0_0_8px_rgba(var(--primary),0.8)]"></span>
           </div>
-          <button 
-            onClick={() => {
-              const id = Date.now().toString();
-              setConversations(prev => [{ 
-                id, 
-                title: "Nova conversa", 
-                messages: [], 
-                createdAt: new Date() 
-              }, ...prev]);
-              setActiveConvId(id);
-            }} 
-            className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground"
-            title="Nova conversa"
-          >
-            <Plus size={20} />
-          </button>
-        </header>
+          <h1 className="text-xs font-bold font-mono tracking-[0.2em] text-primary uppercase text-glow">
+            UNINTA // {userId || "AGUARDANDO_ID"}
+          </h1>
+        </div>
+        <button 
+          onClick={() => {
+            const id = Date.now().toString();
+            setConversations(prev => [{ 
+              id, 
+              title: "Nova conversa", 
+              messages: [], 
+              createdAt: new Date() 
+            }, ...prev]);
+            setActiveConvId(id);
+          }} 
+          className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground"
+          title="Nova conversa"
+        >
+          <Plus size={20} />
+        </button>
+      </header>
 
-        <main className="flex-1 overflow-y-auto chat-scrollbar relative scroll-smooth px-4 bg-gradient-to-b from-transparent to-black/20">
-          {!messages.length ? (
-            <EmptyState />
-          ) : (
-            <div className="max-w-3xl mx-auto w-full py-10 space-y-8">
-              <AnimatePresence mode="popLayout">
-                {messages.map((msg) => (
-                  <motion.div 
-                    key={msg.id} 
-                    initial={{ opacity: 0, y: 10 }} 
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className={`flex gap-4 ${msg.role === "user" ? "flex-row-reverse" : ""}`}
-                  >
-                    {msg.role === "assistant" && (
-                      <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center border border-primary/20 shrink-0 shadow-[0_0_15px_rgba(var(--primary),0.1)]">
-                        <Zap size={14} className="text-primary animate-pulse" />
+      <main className="flex-1 overflow-y-auto chat-scrollbar relative scroll-smooth px-4 bg-gradient-to-b from-transparent to-black/20">
+        {!messages.length ? (
+          <EmptyState />
+        ) : (
+          <div className="max-w-3xl mx-auto w-full py-10 space-y-8">
+            <AnimatePresence mode="popLayout">
+              {messages.map((msg) => (
+                <motion.div 
+                  key={msg.id} 
+                  initial={{ opacity: 0, y: 10 }} 
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className={`flex gap-4 ${msg.role === "user" ? "flex-row-reverse" : ""}`}
+                >
+                  {msg.role === "assistant" && (
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center border border-primary/20 shrink-0 shadow-[0_0_15px_rgba(var(--primary),0.1)]">
+                      <Zap size={14} className="text-primary animate-pulse" />
+                    </div>
+                  )}
+                  <div className={`p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed backdrop-blur-md border shadow-2xl ${
+                    msg.role === "user" 
+                      ? "bg-primary/90 text-primary-foreground border-primary/20" 
+                      : "bg-white/5 border-white/10 text-white/90"
+                  }`}>
+                    <ReactMarkdown 
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        a: ({ node, children, ...props }) => (
+                          <a 
+                            {...props} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-primary hover:text-primary/80 underline flex items-center gap-1 transition-all group"
+                          >
+                            {children}
+                            <span className="opacity-0 group-hover:opacity-100 transition-all ml-1">↗</span>
+                          </a>
+                        )
+                      }}
+                      className="prose prose-invert prose-sm max-w-none prose-headings:font-bold prose-a:text-primary prose-a:underline"
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                      
+                    {msg.sources && msg.sources.length > 0 && (
+                      <div className="mt-6 pt-6 border-t border-white/10">
+                        <motion.div 
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="flex items-center gap-2 mb-6 text-xs uppercase font-bold tracking-wider text-primary/80 font-mono"
+                        >
+                          <BookOpen size={14} className="shrink-0" />
+                          <span>REFERÊNCIAS ACADÊMICAS ENCONTRADAS ({msg.sources.length})</span>
+                        </motion.div>
+                        <div className="space-y-3 max-h-48 overflow-y-auto chat-scrollbar pr-2">
+                          {msg.sources.map((source, index) => (
+                            <motion.div
+                              key={`${msg.id}-${index}`}
+                              initial={{ opacity: 0, x: -20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: index * 0.1 }}
+                            >
+                              <SourceCard source={source} />
+                            </motion.div>
+                          ))}
+                        </div>
                       </div>
                     )}
-                    <div className={`p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed backdrop-blur-md border shadow-2xl ${
-                      msg.role === "user" 
-                        ? "bg-primary/90 text-primary-foreground border-primary/20" 
-                        : "bg-white/5 border-white/10 text-white/90"
-                    }`}>
-                      <ReactMarkdown 
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          a: ({ node, children, ...props }) => (
-                            <a 
-                              {...props} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="text-primary hover:text-primary/80 underline flex items-center gap-1 transition-all group"
-                            >
-                              {children}
-                              <span className="opacity-0 group-hover:opacity-100 transition-all ml-1">↗</span>
-                            </a>
-                          )
-                        }}
-                        className="prose prose-invert prose-sm max-w-none prose-headings:font-bold prose-a:text-primary prose-a:underline"
+
+                    {msg.role === 'assistant' && (
+                      <motion.button 
+                        onClick={() => exportarParaPDF(msg.content)} 
+                        className="mt-4 flex items-center gap-2 text-[10px] bg-white/5 hover:bg-primary/20 p-2.5 rounded-xl border border-white/10 transition-all uppercase font-bold tracking-tighter shadow-sm hover:shadow-md w-full justify-center"
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
                       >
-                        {msg.content}
-                      </ReactMarkdown>
-                      
-                      {msg.sources && msg.sources.length > 0 && (
-                        <div className="mt-6 pt-6 border-t border-white/10">
-                          <motion.div 
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            className="flex items-center gap-2 mb-6 text-xs uppercase font-bold tracking-wider text-primary/80 font-mono"
-                          >
-                            <BookOpen size={14} className="shrink-0" />
-                            <span>REFERÊNCIAS ACADÊMICAS ENCONTRADAS ({msg.sources.length})</span>
-                          </motion.div>
-                                                   <div className="space-y-3 max-h-48 overflow-y-auto chat-scrollbar pr-2">
-                            {msg.sources.map((source, index) => (
-                              <motion.div
-                                key={`${msg.id}-${index}`}
-                                initial={{ opacity: 0, x: -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: index * 0.1 }}
-                              >
-                                <SourceCard source={source} />
-                              </motion.div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {msg.role === 'assistant' && (
-                        <motion.button 
-                          onClick={() => exportarParaPDF(msg.content)} 
-                          className="mt-4 flex items-center gap-2 text-[10px] bg-white/5 hover:bg-primary/20 p-2.5 rounded-xl border border-white/10 transition-all uppercase font-bold tracking-tighter shadow-sm hover:shadow-md w-full justify-center"
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                        >
-                          <FileText size={12} /> Gerar Relatório PDF
-                        </motion.button>
-                      )}
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-              {isTyping && (
-                <div className="flex gap-4 mb-8">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                    <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                        <FileText size={12} /> Gerar Relatório PDF
+                      </motion.button>
+                    )}
                   </div>
-                  <TypingIndicator />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+            {isTyping && (
+              <div className="flex gap-4 mb-8">
+                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                  <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
                 </div>
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-          )}
-        </main>
-
-        <footer className="p-6 bg-gradient-to-t from-background to-transparent relative">
-          <div className="max-w-3xl mx-auto relative h-auto">
-            <div className="relative z-10 flex items-end gap-2 bg-black/80 border border-white/10 rounded-[1.5rem] p-2.5 transition-all duration-300 backdrop-blur-[40px] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
-              <button 
-                onClick={toggleVoice} 
-                className={`p-2.5 rounded-xl transition-all ${
-                  audioAnalyzer.isActive 
-                    ? "bg-primary text-primary-foreground shadow-[0_0_15px_rgba(var(--primary),0.5)]" 
-                    : "text-muted-foreground hover:bg-white/5"
-                }`}
-                title={audioAnalyzer.isActive ? "Parar áudio" : "Ativar áudio"}
-              >
-                {audioAnalyzer.isActive ? <MicOff size={18} /> : <Mic size={18} />}
-              </button>
-              
-              <textarea 
-                ref={textareaRef} 
-                value={input} 
-                onChange={(e) => setInput(e.target.value)} 
-                onKeyDown={handleKeyDown} 
-                placeholder={userId ? "Injete um comando... (pesquisa: 'estudos sobre IA')" : "Digite seu nome para iniciar..."} 
-                rows={1} 
-                autoComplete="off"
-                spellCheck="false"
-                disabled={isTyping}
-                style={{ 
-                  border: 'none', 
-                  boxShadow: 'none', 
-                  outline: 'none', 
-                  background: 'transparent',
-                  resize: 'none'
-                }}
-                className="flex-1 bg-transparent border-0 focus:border-0 focus:ring-0 focus:outline-none resize-none text-sm py-2.5 placeholder:text-muted-foreground/30 font-sans chat-scrollbar overflow-y-auto shadow-none outline-none appearance-none text-white selection:bg-primary/40 min-h-[20px]" 
-              />
-              
-              <button 
-                onClick={handleSend} 
-                disabled={!input.trim() || isTyping} 
-                className="p-2.5 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 disabled:cursor-not-allowed shadow-lg active:scale-95 transition-all group hover:shadow-[0_0_20px_rgba(var(--primary),0.4)]"
-                title="Enviar mensagem"
-              >
-                {isTyping ? (
-                  <Loader2 size={18} className="animate-spin" />
-                ) : (
-                  <Send size={18} className="group-hover:translate-x-0.5 transition-transform" />
-                )}
-              </button>
-            </div>
-            <p className="text-center text-[8px] text-muted-foreground/20 mt-4 font-mono uppercase tracking-[0.5em] animate-pulse">
-              Neural Lab // Protocol 6.0 // Pesquisa Acadêmica Ativa
-            </p>
+                <TypingIndicator />
+              </div>
+            )}
+            <div ref={messagesEndRef} />
           </div>
-        </footer>
-      </div>
+        )}
+      </main>
 
-      <AnimatePresence>
-        {showVoiceOrb && (
-          <motion.div 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            exit={{ opacity: 0 }} 
-            className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-3xl flex flex-col items-center justify-center p-8"
-          >
-            <NeuralOrb 
-              isActive={audioAnalyzer.isActive} 
-              volume={audioAnalyzer.volume} 
-              frequency={audioAnalyzer.frequency} 
-              isProcessing={audioAnalyzer.isProcessing}
-              size="lg"
-            />
-            <motion.p 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-white/80 text-sm mt-6 font-mono tracking-wide"
-            >
-              {audioAnalyzer.isProcessing ? "Processando..." : "Ouvindo..."}
-            </motion.p>
+      <footer className="p-6 bg-gradient-to-t from-background to-transparent relative">
+        <div className="max-w-3xl mx-auto relative h-auto">
+          <div className="relative z-10 flex items-end gap-2 bg-black/80 border border-white/10 rounded-[1.5rem] p-2.5 transition-all duration-300 backdrop-blur-[40px] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
             <button 
               onClick={toggleVoice} 
-              className="mt-12 p-5 rounded-full bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive hover:text-white transition-all shadow-[0_0_30px_rgba(var(--destructive),0.2)] active:scale-95"
-              title="Parar gravação"
+              className={`p-2.5 rounded-xl transition-all ${
+                audioAnalyzer.isActive 
+                  ? "bg-primary text-primary-foreground shadow-[0_0_15px_rgba(var(--primary),0.5)]" 
+                  : "text-muted-foreground hover:bg-white/5"
+              }`}
+              title={audioAnalyzer.isActive ? "Parar áudio" : "Ativar áudio"}
             >
-              <MicOff size={24} />
+              {audioAnalyzer.isActive ? <MicOff size={18} /> : <Mic size={18} />}
             </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            
+            <textarea 
+              ref={textareaRef} 
+              value={input} 
+              onChange={(e) => setInput(e.target.value)} 
+              onKeyDown={handleKeyDown} 
+              placeholder={userId ? "Injete um comando... (pesquisa: 'estudos sobre IA')" : "Digite seu nome para iniciar..."} 
+              rows={1} 
+              autoComplete="off"
+              spellCheck="false"
+              disabled={isTyping}
+              style={{ 
+                border: 'none', 
+                boxShadow: 'none', 
+                outline: 'none', 
+                background: 'transparent',
+                resize: 'none'
+              }}
+              className="flex-1 bg-transparent border-0 focus:border-0 focus:ring-0 focus:outline-none resize-none text-sm py-2.5 placeholder:text-muted-foreground/30 font-sans chat-scrollbar overflow-y-auto shadow-none outline-none appearance-none text-white selection:bg-primary/40 min-h-[20px]" 
+            />
+            
+            <button 
+              onClick={handleSend} 
+              disabled={!input.trim() || isTyping} 
+              className="p-2.5 bg-primary text-primary-foreground rounded-xl disabled:opacity-20 disabled:cursor-not-allowed shadow-lg active:scale-95 transition-all group hover:shadow-[0_0_20px_rgba(var(--primary),0.4)]"
+              title="Enviar mensagem"
+            >
+              {isTyping ? (
+                <Loader2 size={18} className="animate-spin" />
+              ) : (
+                <Send size={18} className="group-hover:translate-x-0.5 transition-transform" />
+              )}
+            </button>
+          </div>
+          <p className="text-center text-[8px] text-muted-foreground/20 mt-4 font-mono uppercase tracking-[0.5em] animate-pulse">
+            Neural Lab // Protocol 6.0 // Pesquisa Acadêmica Ativa
+          </p>
+        </div>
+      </footer>
     </div>
+
+    <AnimatePresence>
+      {showVoiceOrb && (
+        <motion.div 
+          initial={{ opacity: 0 }} 
+          animate={{ opacity: 1 }} 
+          exit={{ opacity: 0 }} 
+          className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-3xl flex flex-col items-center justify-center p-8"
+        >
+          <NeuralOrb 
+            isActive={audioAnalyzer.isActive} 
+            volume={audioAnalyzer.volume} 
+            frequency={audioAnalyzer.frequency} 
+            isProcessing={audioAnalyzer.isProcessing}
+            size="lg"
+          />
+          <motion.p 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-white/80 text-sm mt-6 font-mono tracking-wide"
+          >
+            {audioAnalyzer.isProcessing ? "Processando..." : "Ouvindo..."}
+          </motion.p>
+          <button 
+            onClick={toggleVoice} 
+            className="mt-12 p-5 rounded-full bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive hover:text-white transition-all shadow-[0_0_30px_rgba(var(--destructive),0.2)] active:scale-95"
+            title="Parar gravação"
+          >
+            <MicOff size={24} />
+          </button>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  </div>
   );
 }
