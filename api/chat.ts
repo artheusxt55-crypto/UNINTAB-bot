@@ -1,181 +1,109 @@
-// ✅ Função auxiliar para resumir conteúdo e evitar token overflow
-function resumirConteudo(texto: string, maxChars: number = 400): string {
+import { createClient } from '@supabase/supabase-js';
+import Groq from 'groq-sdk';
+
+// ✅ Helpers robustos
+const resumirConteudo = (texto: string, maxChars: number = 400): string => {
   if (!texto) return '';
-  if (texto.length <= maxChars) return texto;
-  return texto.substring(0, maxChars).trim() + '...';
-}
+  return texto.length <= maxChars ? texto : texto.substring(0, maxChars).trim() + '...';
+};
 
-// ✅ Função auxiliar para extrair texto limpo de HTML (fallback)
-function limparTexto(html: string): string {
-  const div = document.createElement('div');
-  div.innerHTML = html;
-  return div.textContent?.slice(0, 500) || '';
-}
+const limparTexto = (html: string): string => {
+  if (!html) return "";
+  return html.replace(/<[^>]*>?/gm, '').replace(/\s+/g, ' ').trim().slice(0, 500);
+};
 
-// ✅ Web sources CORRIGIDAS com APIs reais
+// ✅ Web Search com Timeouts individuais + SciELO adicionada
 async function buscarFontesWebOtimizada(termo: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
   const t = encodeURIComponent(termo);
+
   try {
-    const [resWikiSearch, resSemanticScholar, resPubMed] = await Promise.allSettled([
-      // ✅ Wikipedia SEARCH (não summary por título exato)
-      fetch(
-        `https://pt.wikipedia.org/w/api.php?action=query&list=search&srsearch=${t}&format=json&srwhat=text&srprop=snippet&srlimit=1&origin=*`
-      ).then(r => r.json())
-        .then(data => data.query?.search?.[0]?.snippet || ""),
-      
-      // ✅ Semantic Scholar (melhor que Scielo scraping)
-      fetch(
-        `https://api.semanticscholar.org/graph/v1/paper/search?query=${t}&limit=2&fields=title,abstract,url,year&offset=0`
-      ).then(r => r.json())
-        .then(data => {
-          if (!data.data?.length) return '';
-          return data.data.map((p: any) => 
-            `${p.title || 'Sem título'} (${p.year || ''}): ${resumirConteudo(p.abstract || '', 150)}`
-          ).join('\n');
-        }),
-      
-      // ✅ PubMed E-utilities (API oficial)
-      fetch(
-        `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${t}&retmax=2&retmode=json`
-      ).then(r => r.json())
-        .then(data => {
-          const ids = data.esearchresult?.idlist || [];
-          return ids.length ? `PubMed IDs: ${ids.join(', ')}` : '';
-        })
+    const [resWiki, resSemantic, resPubMed, resScielo] = await Promise.allSettled([
+      fetch(`https://pt.wikipedia.org/w/api.php?action=query&list=search&srsearch=${t}&format=json&origin=*`, { signal: controller.signal })
+        .then(r => r.json()).then(d => limparTexto(d.query?.search?.[0]?.snippet || "")),
+      fetch(`https://api.semanticscholar.org/graph/v1/paper/search?query=${t}&limit=2&fields=title,abstract,year`, { signal: controller.signal })
+        .then(r => r.json()).then(d => d.data?.map((p: any) => `${p.title} (${p.year}): ${resumirConteudo(p.abstract || '', 150)}`).join('\n') || ""),
+      fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${t}&retmax=2&retmode=json`, { signal: controller.signal })
+        .then(r => r.json()).then(d => d.esearchresult?.idlist?.length ? `PubMed IDs: ${d.esearchresult.idlist.join(', ')}` : ""),
+      // ✅ Adicionado: Busca SciELO
+      fetch(`https://search.scielo.org/api/v1/search?q=${t}&count=2&format=json`, { signal: controller.signal })
+        .then(r => r.json()).then(d => d.dia_response?.docs?.map((doc: any) => `SciELO: ${doc.title?.[0]} (${doc.year})`).join('\n') || "")
     ]);
-
+    clearTimeout(timeout);
     return {
-      wiki: typeof resWikiSearch === 'string' ? resWikiSearch : "",
-      semantic: typeof resSemanticScholar === 'string' ? resSemanticScholar : "",
-      pubmed: typeof resPubMed === 'string' ? resPubMed : ""
+      wiki: resWiki.status === 'fulfilled' ? resWiki.value : "",
+      semantic: resSemantic.status === 'fulfilled' ? resSemantic.value : "",
+      pubmed: resPubMed.status === 'fulfilled' ? resPubMed.value : "",
+      scielo: resScielo.status === 'fulfilled' ? resScielo.value : "" // ✅ Adicionado
     };
-  } catch (e) {
-    console.error('Erro fontes web:', e);
-    return { wiki: "", semantic: "", pubmed: "" };
-  }
+  } catch { return { wiki: "", semantic: "", pubmed: "", scielo: "" }; }
 }
 
-// ✅ Supabase otimizado mantido (já estava bom)
-async function buscarLivrosOtimizado(termoBuscaCompleto: string) {
-  const palavrasChave = termoBuscaCompleto.toLowerCase().match(/\b\w{3,}\b/g) || [];
-  if (!palavrasChave.length) return [];
-  
-  const termoPrincipal = palavrasChave[0];
-  const { data } = await supabase
-    .from('biblioteca')
-    .select('titulo, url_pdf, categoria, conteudo_extra')
-    .or(`titulo.ilike.%${termoPrincipal}%,conteudo_extra.ilike.%${termoPrincipal}%`)
-    .limit(10);
-  
-  return data || [];
+async function buscarGoogleReal(termo: string): Promise<string> {
+  const apiKey = process.env.SERPER_API_KEY;
+  if (!apiKey) return "";
+  try {
+    const res = await fetch("https://google.serper.dev/search", {
+      method: "POST",
+      headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ q: termo, gl: "br", hl: "pt-br", num: 3 }),
+    });
+    const data = await res.json();
+    return data.organic?.map((r: any) => `🔗 ${r.title}: ${r.link}`).join('\n') || "";
+  } catch { return ""; }
 }
 
-export const config = { runtime: 'edge' };
+export const config = { runtime: 'edge', regions: ['iad1'] };
 
 export default async function handler(req: Request) {
   try {
-    const { prompt, contexto, query_search } = await req.json();
-    const termoBuscaCompleto = query_search || prompt;
+    if (req.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
 
-    console.log(`🔍 Lab Untbot - RAG Híbrido: "${termoBuscaCompleto}"`);
+    const body = await req.json();
+    const { prompt, contexto, query_search } = body;
+    const termoBusca = query_search || prompt;
 
-    // ✅ Buscas paralelas OTIMIZADAS
+    if (!prompt?.trim()) return new Response(JSON.stringify({ error: 'Prompt vazio' }), { status: 400 });
+
+    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
+
+    // ✅ Execução paralela (Máxima Performance)
     const [fontesWeb, livrosRaw, googleReal] = await Promise.allSettled([
-      buscarFontesWebOtimizada(termoBuscaCompleto),
-      buscarLivrosOtimizado(termoBuscaCompleto),
-      buscarGoogleReal(termoBuscaCompleto)
+      buscarFontesWebOtimizada(termoBusca),
+      supabase.from('biblioteca').select('titulo, url_pdf, categoria, conteudo_extra').or(`titulo.ilike.%${termoBusca}%,conteudo_extra.ilike.%${termoBusca}%`).limit(5),
+      buscarGoogleReal(termoBusca)
     ]);
 
-    const palavrasChave = termoBuscaCompleto.toLowerCase().match(/\b\w{3,}\b/g) || [];
+    const livros = livrosRaw.status === 'fulfilled' ? (livrosRaw.value.data || []) : [];
+    const web = fontesWeb.status === 'fulfilled' ? fontesWeb.value : { wiki: '', semantic: '', pubmed: '', scielo: '' };
+    const google = googleReal.status === 'fulfilled' ? googleReal.value : '';
+
+    const systemPrompt = `AURA - Lab Neuro-UNINTA (Mestre: Matheus).
+    Priorize os LIVROS DO LAB abaixo. Se necessário, use os dados da Web e Google.
     
-    // ✅ Scoring mantido (excelente)
-    const livrosRelevantes = (livrosRaw.status === 'fulfilled' ? livrosRaw.value : [])
-      .map((livro: any) => {
-        let score = 0;
-        palavrasChave.forEach(palavra => {
-          if (livro.titulo?.toLowerCase().includes(palavra)) score += 20;
-          if (livro.conteudo_extra?.toLowerCase().includes(palavra)) score += 10;
-        });
-        return { ...livro, relevance_score: score };
-      })
-      .filter((livro: any) => livro.relevance_score > 0)
-      .sort((a: any, b: any) => b.relevance_score - a.relevance_score)
-      .slice(0, 3);
-
-    // ✅ Prompt OTIMIZADO (máx 4k tokens)
-    const conteudoLivros = livrosRelevantes
-      .map((l: any, i: number) => `
-📖 LIVRO ${i+1}: ${l.titulo}
-📄 CONTEÚDO: ${resumirConteudo(l.conteudo_extra || '', 350)}
-📎 PDF: ${l.url_pdf}`)
-      .join('\n---');
-
-    const fontesWebFormatadas = fontesWeb.status === 'fulfilled' ? fontesWeb.value : { wiki: '', semantic: '', pubmed: '' };
-
-    const instrucaoMestre = `🚨 NEUROLAB UNINTA - BASE ATUALIZADA ✅
-
-🛡️ LIVROS DO LABORATÓRIO (PRIORIDADE MÁXIMA):
-${conteudoLivros || 'Nenhum livro encontrado'}
-
-🌐 GOOGLE SEARCH:
-${googleReal || 'Sem resultados'}
-
-🌍 FONTES ACADÊMICAS:
-Wikipedia: ${resumirConteudo(fontesWebFormatadas.wiki, 200)}
-Semantic Scholar: ${resumirConteudo(fontesWebFormatadas.semantic, 200)}
-PubMed: ${fontesWebFormatadas.pubmed}
-
-⚖️ PROTOCOLO AURA:
-1. Responda como AURA (Mestre Matheus) - técnica + humana
-2. PDFs do Lab = fonte #1
-3. Cite APENAS links fornecidos
-4. NUNCA invente referências`;
-
-    const groqClient = getGroqClient(termoBuscaCompleto);
+    🛡️ LIVROS DO LAB:
+    ${livros.map((l:any) => `📖 ${l.titulo}\n📄 ${resumirConteudo(l.conteudo_extra || '', 300)}\n🔗 ${l.url_pdf}`).join('\n\n') || 'Nenhum livro encontrado.'}
     
-    const completion = await groqClient.chat.completions.create({
+    🌐 GOOGLE: ${google}
+    📚 ACADÊMICO: Wiki: ${web.wiki} | Semantic: ${web.semantic} | PubMed: ${web.pubmed} | SciELO: ${web.scielo}
+    
+    INSTRUÇÕES: Cite URLs, seja técnico e limite a 300 palavras.`;
+
+    const completion = await groq.chat.completions.create({
       model: "llama-3.1-8b-instant",
-      messages: [
-        { 
-          role: "system", 
-          content: `${instrucaoMestre}\n\nCONTEXTO ADICIONAL:\n${contexto || ''}` 
-        },
-        { role: "user", content: prompt }
-      ],
+      messages: [{ role: "system", content: systemPrompt }, { role: "user", content: prompt }],
       temperature: 0.4,
-      max_tokens: 2000 // ✅ Limite explícito
+      max_tokens: 1000
     });
 
-    return new Response(
-      JSON.stringify({ 
-        resposta: completion.choices[0]?.message?.content || "Desculpe, não consegui processar sua solicitação.",
-        fontesLab: livrosRelevantes.map((l: any) => ({ 
-          titulo: l.titulo, 
-          url: l.url_pdf,
-          score: l.relevance_score 
-        }))
-      }), 
-      {
-        status: 200,
-        headers: { 
-          'Content-Type': 'application/json', 
-          'Cache-Control': 'public, s-maxage=1800, stale-while-revalidate=3600',
-          'X-RAG-Livros': livrosRelevantes.length.toString()
-        },
-      }
-    );
+    return new Response(JSON.stringify({
+      resposta: completion.choices[0]?.message?.content,
+      fontesLab: livros.map((l: any) => ({ titulo: l.titulo, url: l.url_pdf }))
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 
   } catch (error: any) {
-    console.error('Erro handler:', error);
-    return new Response(
-      JSON.stringify({ 
-        error: 'Serviço temporariamente indisponível',
-        detalhes: process.env.NODE_ENV === 'development' ? error.message : undefined
-      }), 
-      { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      }
-    );
+    return new Response(JSON.stringify({ error: 'Erro na AURA', details: error.message }), { status: 500 });
   }
 }
