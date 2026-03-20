@@ -1,109 +1,221 @@
-import { createClient } from '@supabase/supabase-js';
-import Groq from 'groq-sdk';
+// ✅ SEM DEPENDÊNCIAS PROBLEMÁTICAS - Edge Runtime Perfeito
+const resumirConteudo = (texto: string, maxChars = 400): string => 
+  texto ? (texto.length <= maxChars ? texto : texto.slice(0, maxChars).trim() + '...') : '';
 
-// ✅ Helpers robustos
-const resumirConteudo = (texto: string, maxChars: number = 400): string => {
-  if (!texto) return '';
-  return texto.length <= maxChars ? texto : texto.substring(0, maxChars).trim() + '...';
-};
+const limparTexto = (html: string): string => 
+  html ? html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 500) : '';
 
-const limparTexto = (html: string): string => {
-  if (!html) return "";
-  return html.replace(/<[^>]*>?/gm, '').replace(/\s+/g, ' ').trim().slice(0, 500);
-};
-
-// ✅ Web Search com Timeouts individuais + SciELO adicionada
+// ✅ Web Search Completa (Wikipedia + SciELO + PubMed + Semantic)
 async function buscarFontesWebOtimizada(termo: string) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
-  const t = encodeURIComponent(termo);
+  const t = encodeURIComponent(termo);
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 4500).unref();
 
-  try {
-    const [resWiki, resSemantic, resPubMed, resScielo] = await Promise.allSettled([
-      fetch(`https://pt.wikipedia.org/w/api.php?action=query&list=search&srsearch=${t}&format=json&origin=*`, { signal: controller.signal })
-        .then(r => r.json()).then(d => limparTexto(d.query?.search?.[0]?.snippet || "")),
-      fetch(`https://api.semanticscholar.org/graph/v1/paper/search?query=${t}&limit=2&fields=title,abstract,year`, { signal: controller.signal })
-        .then(r => r.json()).then(d => d.data?.map((p: any) => `${p.title} (${p.year}): ${resumirConteudo(p.abstract || '', 150)}`).join('\n') || ""),
-      fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${t}&retmax=2&retmode=json`, { signal: controller.signal })
-        .then(r => r.json()).then(d => d.esearchresult?.idlist?.length ? `PubMed IDs: ${d.esearchresult.idlist.join(', ')}` : ""),
-      // ✅ Adicionado: Busca SciELO
-      fetch(`https://search.scielo.org/api/v1/search?q=${t}&count=2&format=json`, { signal: controller.signal })
-        .then(r => r.json()).then(d => d.dia_response?.docs?.map((doc: any) => `SciELO: ${doc.title?.[0]} (${doc.year})`).join('\n') || "")
-    ]);
-    clearTimeout(timeout);
-    return {
-      wiki: resWiki.status === 'fulfilled' ? resWiki.value : "",
-      semantic: resSemantic.status === 'fulfilled' ? resSemantic.value : "",
-      pubmed: resPubMed.status === 'fulfilled' ? resPubMed.value : "",
-      scielo: resScielo.status === 'fulfilled' ? resScielo.value : "" // ✅ Adicionado
-    };
-  } catch { return { wiki: "", semantic: "", pubmed: "", scielo: "" }; }
+  try {
+    const [wiki, semantic, pubmed, scielo] = await Promise.allSettled([
+      // Wikipedia
+      fetch(`https://pt.wikipedia.org/w/api.php?action=query&list=search&srsearch=${t}&format=json&origin=*`, {
+        signal: controller.signal
+      }).then(r => r.json()).then(d => limparTexto(d.query?.search?.[0]?.snippet || '')),
+
+      // Semantic Scholar
+      fetch(`https://api.semanticscholar.org/graph/v1/paper/search?query=${t}&limit=2&fields=title,abstract,year`, {
+        signal: controller.signal
+      }).then(r => r.json()).then(d => 
+        d.data?.[0] ? `${d.data[0].title || ''} (${d.data[0].year || ''}): ${resumirConteudo(d.data[0].abstract || '', 150)}` : ''
+      ),
+
+      // PubMed
+      fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${t}&retmax=2&retmode=json`, {
+        signal: controller.signal
+      }).then(r => r.json()).then(d => 
+        d.esearchresult?.idlist?.[0] ? `PubMed ID: ${d.esearchresult.idlist[0]}` : ''
+      ),
+
+      // ✅ SciELO (BRASIL! 🇧🇷)
+      fetch(`https://search.scielo.org/api/v1/search?q=${t}&count=2&format=json&lang=pt`, {
+        signal: controller.signal
+      }).then(r => r.json()).then(d => 
+        d.dia_response?.docs?.[0]?.title?.[0] ? `SciELO: ${d.dia_response.docs[0].title[0]}` : ''
+      )
+    ]);
+
+    return {
+      wiki: (wiki as PromiseFulfilledResult<string>).value || '',
+      semantic: (semantic as PromiseFulfilledResult<string>).value || '',
+      pubmed: (pubmed as PromiseFulfilledResult<string>).value || '',
+      scielo: (scielo as PromiseFulfilledResult<string>).value || ''
+    };
+  } catch {
+    return { wiki: '', semantic: '', pubmed: '', scielo: '' };
+  }
 }
 
-async function buscarGoogleReal(termo: string): Promise<string> {
-  const apiKey = process.env.SERPER_API_KEY;
-  if (!apiKey) return "";
-  try {
-    const res = await fetch("https://google.serper.dev/search", {
-      method: "POST",
-      headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ q: termo, gl: "br", hl: "pt-br", num: 3 }),
-    });
-    const data = await res.json();
-    return data.organic?.map((r: any) => `🔗 ${r.title}: ${r.link}`).join('\n') || "";
-  } catch { return ""; }
-}
-
-export const config = { runtime: 'edge', regions: ['iad1'] };
+export const config = { 
+  runtime: 'edge', 
+  regions: ['iad1']
+};
 
 export default async function handler(req: Request) {
-  try {
-    if (req.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
+  try {
+    // ✅ Validação rígida
+    if (req.method !== 'POST') {
+      return new Response(JSON.stringify({ error: 'POST required' }), { 
+        status: 405, 
+        headers: { 'Content-Type': 'application/json' } 
+      });
+    }
 
-    const body = await req.json();
-    const { prompt, contexto, query_search } = body;
-    const termoBusca = query_search || prompt;
+    // ✅ Parse seguro
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return new Response(JSON.stringify({ error: 'JSON inválido' }), { 
+        status: 400, 
+        headers: { 'Content-Type': 'application/json' } 
+      });
+    }
 
-    if (!prompt?.trim()) return new Response(JSON.stringify({ error: 'Prompt vazio' }), { status: 400 });
+    const { prompt = '', contexto = '', query_search } = body;
+    const termoBusca = query_search || prompt;
 
-    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
-    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
+    if (!prompt.trim()) {
+      return new Response(JSON.stringify({ error: 'Prompt vazio' }), { 
+        status: 400, 
+        headers: { 'Content-Type': 'application/json' } 
+      });
+    }
 
-    // ✅ Execução paralela (Máxima Performance)
-    const [fontesWeb, livrosRaw, googleReal] = await Promise.allSettled([
-      buscarFontesWebOtimizada(termoBusca),
-      supabase.from('biblioteca').select('titulo, url_pdf, categoria, conteudo_extra').or(`titulo.ilike.%${termoBusca}%,conteudo_extra.ilike.%${termoBusca}%`).limit(5),
-      buscarGoogleReal(termoBusca)
-    ]);
+    // ✅ SUPABASE REST API direto (Edge 100%)
+    let livros: any[] = [];
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_ANON_KEY; // ← ANON_KEY é suficiente!
 
-    const livros = livrosRaw.status === 'fulfilled' ? (livrosRaw.value.data || []) : [];
-    const web = fontesWeb.status === 'fulfilled' ? fontesWeb.value : { wiki: '', semantic: '', pubmed: '', scielo: '' };
-    const google = googleReal.status === 'fulfilled' ? googleReal.value : '';
+    if (supabaseUrl && supabaseKey) {
+      try {
+        const url = `${supabaseUrl}/rest/v1/biblioteca?select=titulo,url_pdf,categoria,conteudo_extra&or=(titulo.ilike.%${encodeURIComponent(termoBusca)}%,conteudo_extra.ilike.%${encodeURIComponent(termoBusca)}%)&limit=5&order=created_at.desc`;
+        
+        const supabaseRes = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`
+          }
+        });
 
-    const systemPrompt = `AURA - Lab Neuro-UNINTA (Mestre: Matheus).
-    Priorize os LIVROS DO LAB abaixo. Se necessário, use os dados da Web e Google.
-    
-    🛡️ LIVROS DO LAB:
-    ${livros.map((l:any) => `📖 ${l.titulo}\n📄 ${resumirConteudo(l.conteudo_extra || '', 300)}\n🔗 ${l.url_pdf}`).join('\n\n') || 'Nenhum livro encontrado.'}
-    
-    🌐 GOOGLE: ${google}
-    📚 ACADÊMICO: Wiki: ${web.wiki} | Semantic: ${web.semantic} | PubMed: ${web.pubmed} | SciELO: ${web.scielo}
-    
-    INSTRUÇÕES: Cite URLs, seja técnico e limite a 300 palavras.`;
+        if (supabaseRes.ok) {
+          livros = await supabaseRes.json();
+        }
+      } catch (e) {
+        console.error('Supabase falhou:', e);
+      }
+    }
 
-    const completion = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
-      messages: [{ role: "system", content: systemPrompt }, { role: "user", content: prompt }],
-      temperature: 0.4,
-      max_tokens: 1000
-    });
+    // ✅ Google Serper (opcional)
+    let googleResults = '';
+    const serperKey = process.env.SERPER_API_KEY;
+    if (serperKey) {
+      try {
+        const serperRes = await fetch('https://google.serper.dev/search', {
+          method: 'POST',
+          headers: { 
+            'X-API-KEY': serperKey, 
+            'Content-Type': 'application/json' 
+          },
+          body: JSON.stringify({ 
+            q: termoBusca, 
+            gl: 'br', 
+            hl: 'pt-br', 
+            num: 3 
+          })
+        });
+        const serperData = await serperRes.json();
+        googleResults = serperData.organic?.slice(0, 3)
+          .map((r: any) => `🔗 ${r.title.slice(0, 50)}: ${r.link}`)
+          .join('\n') || '';
+      } catch {}
+    }
 
-    return new Response(JSON.stringify({
-      resposta: completion.choices[0]?.message?.content,
-      fontesLab: livros.map((l: any) => ({ titulo: l.titulo, url: l.url_pdf }))
-    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    // ✅ Fontes acadêmicas
+    const fontesWeb = await buscarFontesWebOtimizada(termoBusca);
 
-  } catch (error: any) {
-    return new Response(JSON.stringify({ error: 'Erro na AURA', details: error.message }), { status: 500 });
-  }
+    // ✅ PROMPT FINAL (perfeito!)
+    const systemPrompt = `AURA - Lab Neuro-UNINTA (Mestre: Matheus)
+
+🛡️ LIVROS DO LAB (${livros.length}):
+${livros.map((l: any) => 
+  `📖 "${l.titulo}"
+📄 ${resumirConteudo(l.conteudo_extra || l.categoria || '', 280)}
+🔗 ${l.url_pdf || 'PDF interno'}`
+).join('\n\n') || 'Nenhum livro encontrado no lab.'}
+
+🌐 GOOGLE:
+${googleResults}
+
+📚 ACADÊMICO:
+Wikipedia: ${fontesWeb.wiki.slice(0, 180)}
+SciELO 🇧🇷: ${fontesWeb.scielo}
+Semantic: ${fontesWeb.semantic.slice(0, 120)}
+PubMed: ${fontesWeb.pubmed}
+
+⚖️ REGRAS:
+1. Priorize LIVROS DO LAB
+2. Cite URLs disponíveis
+3. Técnico + acessível
+4. Máximo 350 palavras`;
+
+    // ✅ GROQ NATIVE (Edge perfeito)
+    const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.4,
+        max_tokens: 1000,
+        top_p: 0.9
+      })
+    });
+
+    if (!groqResponse.ok) {
+      throw new Error(`Groq ${groqResponse.status}`);
+    }
+
+    const groqData = await groqResponse.json();
+    const resposta = groqData.choices?.[0]?.message?.content || 'Resposta gerada pela AURA';
+
+    return new Response(JSON.stringify({
+      resposta,
+      fontesLab: livros.map((l: any) => ({
+        titulo: l.titulo,
+        url: l.url_pdf || '#',
+        categoria: l.categoria
+      }))
+    }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+        'X-AURA-Version': '2.0',
+        'X-Fontes': `${livros.length}|${!!googleResults}|${!!fontesWeb.scielo}`
+      }
+    });
+
+  } catch (error: any) {
+    console.error('AURA Error:', error);
+    return new Response(JSON.stringify({ 
+      error: 'AURA temporariamente indisponível',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message })
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
 }
