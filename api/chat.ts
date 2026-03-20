@@ -1,4 +1,4 @@
-import Groq from "groq-sdk"; // Mudança sutil na importação
+import Groq from "groq-sdk";
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || "";
@@ -66,15 +66,12 @@ async function buscarLivrosOtimizado(termoBuscaCompleto: string) {
   if (!palavrasChave.length) return [];
 
   const termoPrincipal = palavrasChave[0];
-  const filtros = [
-    `titulo.eq.${termoPrincipal}`,
-    `titulo.ilike.%${termoPrincipal}%`
-  ].concat(palavrasChave.slice(0,3).map(p => `categoria.ilike.%${p}%`));
-
+  
+  // ✅ Agora buscando também o 'conteudo_extra' para a AURA poder ler
   const { data } = await supabase
     .from('biblioteca')
-    .select('titulo, url_pdf, categoria')
-    .or(filtros.join(','))
+    .select('titulo, url_pdf, categoria, conteudo_extra')
+    .or(`titulo.ilike.%${termoPrincipal}%,conteudo_extra.ilike.%${termoPrincipal}%`)
     .limit(10);
 
   return data || [];
@@ -89,10 +86,7 @@ export default async function handler(req: Request) {
     const { prompt, contexto, query_search } = await req.json();
     const termoBuscaCompleto = query_search || prompt;
 
-    // ✅ CORREÇÃO DO CACHE: No Edge, usamos apenas Headers de Cache na Response
-    // Removido caches.default que causava o erro 500
-
-    console.log(`🔍 Busca Lab Neuro: "${termoBuscaCompleto}"`);
+    console.log(`🔍 Lab Untbot (195 Livros) - Analisando: "${termoBuscaCompleto}"`);
 
     const [fontesWeb, livrosRaw] = await Promise.all([
       buscarFontesWeb(termoBuscaCompleto),
@@ -100,31 +94,41 @@ export default async function handler(req: Request) {
     ]);
 
     const palavrasChave = termoBuscaCompleto.toLowerCase().match(/\b\w{3,}\b/g) || [];
+    
+    // ✅ Sistema de Rankeamento Melhorado
     const livrosRelevantes = (livrosRaw || [])
       .map((livro: any) => {
-        const score = palavrasChave.reduce((acc: number, palavra: string) => {
-          const matchesTitulo = livro.titulo?.toLowerCase().includes(palavra);
-          const matchesCategoria = livro.categoria?.toLowerCase().includes(palavra);
-          return acc + (matchesTitulo ? 15 : matchesCategoria ? 8 : 0);
-        }, 0);
+        let score = 0;
+        palavrasChave.forEach(palavra => {
+          if (livro.titulo?.toLowerCase().includes(palavra)) score += 20;
+          if (livro.conteudo_extra?.toLowerCase().includes(palavra)) score += 10;
+          if (livro.categoria?.toLowerCase().includes(palavra)) score += 5;
+        });
         return { ...livro, relevance_score: score };
       })
       .filter((livro: any) => livro.relevance_score > 0)
       .sort((a: any, b: any) => b.relevance_score - a.relevance_score)
-      .slice(0, 5);
+      .slice(0, 3); // Enviamos os 3 melhores para não estourar o limite de memória (tokens)
 
+    // ✅ Instrução Mestra com injeção do conteúdo dos livros
     const instrucaoMestre = `
-🚨 NEUROLAB UNINTA - ACERVO LEGAL ACADEMICO ✅
-🛡️ PDFs DO LABORATÓRIO:
-${livrosRelevantes.map((l: any, i: number) => `${i+1}️⃣ ${l.titulo}\n 📎 PDF: ${l.url_pdf}`).join('\n') || 'Nenhum PDF específico encontrado.'}
+🚨 NEUROLAB UNINTA - BASE DE CONHECIMENTO ATUALIZADA ✅
+🛡️ CONTEÚDO DOS LIVROS DO LABORATÓRIO (PRIORIDADE ABSOLUTA):
+${livrosRelevantes.map((l: any, i: number) => `
+LIVRO ${i+1}: ${l.titulo}
+TRECHO RELEVANTE: ${l.conteudo_extra ? l.conteudo_extra.substring(0, 2000) : 'Texto não disponível'}
+📎 ACESSO PDF: ${l.url_pdf}
+`).join('\n---')}
 
-🌐 FONTES CIENTÍFICAS (WEB):
-- Wiki: ${fontesWeb.wiki}
-- SciELO: ${fontesWeb.scielo}
-- PubMed: ${fontesWeb.pubmed}
+🌐 COMPLEMENTOS CIENTÍFICOS (WEB):
+- Wikipedia: ${fontesWeb.wiki}
+- SciELO/PubMed (Resumos): ${fontesWeb.scielo.substring(0, 300)}...
 
-⚖️ PROTOCOLO: Priorize PDFs do Lab. Cite fontes Web para neurociência recente.
-Você é AURA do Lab Neuro-UNINTA (Mestre Matheus).
+⚖️ PROTOCOLO AURA:
+1. Use os "TRECHOS RELEVANTES" acima para fundamentar sua resposta.
+2. Seja técnica, mas humana (Estilo Mestre Matheus).
+3. Se o livro não tiver a resposta, use as fontes Web.
+Você é AURA, a inteligência do Lab Neuro-UNINTA.
 `;
 
     const groqClient = getGroqClient(termoBuscaCompleto);
@@ -132,27 +136,27 @@ Você é AURA do Lab Neuro-UNINTA (Mestre Matheus).
     const completion = await groqClient.chat.completions.create({
       model: "llama-3.1-8b-instant",
       messages: [
-        { role: "system", content: `${instrucaoMestre}\n\nCONTEXTO:\n${contexto}` },
+        { role: "system", content: `${instrucaoMestre}\n\nCONTEXTO DO USUÁRIO:\n${contexto}` },
         { role: "user", content: prompt }
       ],
-      temperature: 0.6,
-      max_tokens: 2048,
+      temperature: 0.5, // Menos criatividade, mais precisão técnica
+      max_tokens: 1500,
     });
 
     return new Response(JSON.stringify({ 
       resposta: completion.choices[0]?.message?.content || "",
-      fontesLab: livrosRelevantes
+      fontesLab: livrosRelevantes.map(l => ({ titulo: l.titulo, url: l.url_pdf }))
     }), {
       status: 200,
       headers: { 
         'Content-Type': 'application/json',
-        'Cache-Control': 'public, s-maxage=3600' // Cache de 1 hora na Vercel
+        'Cache-Control': 'public, s-maxage=3600'
       },
     });
 
   } catch (error: any) {
-    console.error('❌ API Error:', error);
-    return new Response(JSON.stringify({ error: "Erro interno na conexão neural", details: error.message }), { 
+    console.error('❌ Erro Neural:', error);
+    return new Response(JSON.stringify({ error: "Erro na sinapse da AURA", details: error.message }), { 
       status: 500,
       headers: { 'Content-Type': 'application/json' } 
     });
